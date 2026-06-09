@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agente LSD — Validador ARCA/AFIP</title>
+  <style>
+    /* ── TOKENS ─────────────────────────────────────────────── */
+    :root {
+      --azul-noche:   #0d1b2a;
+      --azul-medio:   #1b2f45;
+      --azul-panel:   #172538;
+      --azul-borde:   #1e3a55;
+      --celeste:      #3b9ede;
+      --celeste-hover:#5bb3ee;
+      --verde:        #2ecc71;
+      --verde-bg:     #0d2e1c;
+      --rojo:         #e74c3c;
+      --rojo-bg:      #2e0d0d;
+      --amarillo:     #f39c12;
+      --amarillo-bg:  #2e2000;
+      --gris-texto:   #8ea8bf;
+      --blanco:       #e8f0f7;
+      --blanco-suave: #b8cfe0;
+      --fuente-mono:  'Courier New', 'Consolas', monospace;
+      --fuente-ui:    'Segoe UI', system-ui, -apple-system, sans-serif;
+      --radio:        8px;
+      --radio-grande: 16px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--azul-noche);
+      color: var(--blanco);
+      font-family: var(--fuente-ui);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── HEADER ─────────────────────────────────────────────── */
+    header {
+      background: var(--azul-panel);
+      border-bottom: 1px solid var(--azul-borde);
+      padding: 18px 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo-marca {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icono {
+      width: 38px;
+      height: 38px;
+      background: var(--celeste);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .logo-texto {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .logo-texto strong {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--blanco);
+      letter-spacing: 0.02em;
+    }
+
+    .logo-texto span {
+      font-size: 11px;
+      color: var(--gris-texto);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .header-badge {
+      margin-left: auto;
+      background: var(--azul-medio);
+      border: 1px solid var(--azul-borde);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 11px;
+      color: var(--gris-texto);
+      font-family: var(--fuente-mono);
+    }
+
+    /* ── LAYOUT ─────────────────────────────────────────────── */
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    /* ── ZONA DE CARGA ───────────────────────────────────────── */
+    #zona-carga {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    #zona-carga h1 {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--blanco);
+      margin-bottom: 8px;
+    }
+
+    #zona-carga p.subtitulo {
+      color: var(--gris-texto);
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    /* Drop zone */
+    #drop-zone {
+      border: 2px dashed var(--azul-borde);
+      border-radius: var(--radio-grande);
+      padding: 56px 40px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: var(--azul-panel);
+      position: relative;
+    }
+
+    #drop-zone:hover,
+    #drop-zone.arrastrando {
+      border-color: var(--celeste);
+      background: var(--azul-medio);
+    }
+
+    #drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icono {
+      font-size: 40px;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .drop-titulo {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--blanco);
+      margin-bottom: 6px;
+    }
+
+    .drop-subtitulo {
+      font-size: 13px;
+      color: var(--gris-texto);
+    }
+
+    .drop-subtitulo strong {
+      color: var(--celeste);
+    }
+
+    /* Archivo seleccionado */
+    #archivo-seleccionado {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      background: var(--azul-medio);
+      border: 1px solid var(--azul-borde);
+      border-radius: var(--radio);
+      padding: 14px 20px;
+      margin-top: 16px;
+      text-align: left;
+    }
+
+    #archivo-seleccionado .archivo-icono {
+      font-size: 22px;
+    }
+
+    #archivo-seleccionado .archivo-info {
+      flex: 1;
+    }
+
+    #archivo-seleccionado .archivo-nombre {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--blanco);
+      font-family: var(--fuente-mono);
+    }
+
+    #archivo-seleccionado .archivo-tamaño {
+      font-size: 12px;
+      color: var(--gris-texto);
+      margin-top: 2px;
+    }
+
+    #btn-quitar {
+      background: none;
+      border: none;
+      color: var(--gris-texto);
+      cursor: pointer;
+      font-size: 18px;
+      padding: 4px;
+      line-height: 1;
+      transition: color 0.15s;
+    }
+
+    #btn-quitar:hover { color: var(--rojo); }
+
+    /* Botón analizar */
+    #btn-analizar {
+      display: none;
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      background: var(--celeste);
+      color: #fff;
+      border: none;
+      border-radius: var(--radio);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    #btn-analizar:hover {
+      background: var(--celeste-hover);
+      transform: translateY(-1px);
+    }
+
+    #btn-analizar:active { transform: translateY(0); }
+
+    /* ── PANEL DE ANÁLISIS ───────────────────────────────────── */
+    #panel-analisis {
+      display: none;
+    }
+
+    /* Progreso */
+    #progreso {
+      background: var(--azul-panel);
+      border: 1px solid var(--azul-borde);
+      border-radius: var(--radio-grande);
+      padding: 28px 32px;
+      margin-bottom: 32px;
+    }
+
+    .progreso-titulo {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--gris-texto);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 20px;
+    }
+
+    .pasos-lista {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .paso {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+      color: var(--gris-texto);
+      transition: color 0.2s;
+    }
+
+    .paso.activo { color: var(--celeste); }
+    .paso.listo  { color: var(--verde); }
+
+    .paso-indicador {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid currentColor;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+
+    .paso.activo .paso-indicador {
+      border-color: var(--celeste);
+      background: rgba(59, 158, 222, 0.15);
+    }
+
+    .paso.listo .paso-indicador {
+      border-color: var(--verde);
+      background: rgba(46, 204, 113, 0.15);
+      color: var(--verde);
+    }
+
+    /* Pulso animado para el paso activo */
+    @keyframes pulso {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    .paso.activo .paso-indicador::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--celeste);
+      animation: pulso 1.2s ease-in-out infinite;
+      display: block;
+    }
+
+    .paso.listo .paso-indicador::before { content: '✓'; }
+
+    /* ── RESULTADO ───────────────────────────────────────────── */
+    #resultado { display: none; }
+
+    /* Veredicto */
+    .veredicto-banner {
+      border-radius: var(--radio-grande);
+      padding: 28px 32px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+    }
+
+    .veredicto-banner.presentable {
+      background: var(--verde-bg);
+      border: 1px solid var(--verde);
+    }
+
+    .veredicto-banner.rechazado {
+      background: var(--rojo-bg);
+      border: 1px solid var(--rojo);
+    }
+
+    .veredicto-banner.revisar {
+      background: var(--amarillo-bg);
+      border: 1px solid var(--amarillo);
+    }
+
+    .veredicto-icono {
+      font-size: 32px;
+      flex-shrink: 0;
+    }
+
+    .veredicto-contenido h2 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .veredicto-banner.presentable h2 { color: var(--verde); }
+    .veredicto-banner.rechazado  h2 { color: var(--rojo); }
+    .veredicto-banner.revisar    h2 { color: var(--amarillo); }
+
+    .veredicto-contenido p {
+      font-size: 14px;
+      color: var(--blanco-suave);
+      line-height: 1.5;
+    }
+
+    /* Stats */
+    .stats-fila {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .stat-card {
+      background: var(--azul-panel);
+      border: 1px solid var(--azul-borde);
+      border-radius: var(--radio);
+      padding: 16px;
+      text-align: center;
+    }
+
+    .stat-valor {
+      font-size: 28px;
+      font-weight: 700;
+      font-family: var(--fuente-mono);
+      color: var(--blanco);
+      line-height: 1;
+    }
+
+    .stat-valor.critico { color: var(--rojo); }
+    .stat-valor.advertencia { color: var(--amarillo); }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--gris-texto);
+      margin-top: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Resumen */
+    .resumen-texto {
+      background: var(--azul-panel);
+      border-left: 3px solid var(--celeste);
+      border-radius: 0 var(--radio) var(--radio) 0;
+      padding: 16px 20px;
+      font-size: 14px;
+      color: var(--blanco-suave);
+      margin-bottom: 28px;
+      line-height: 1.6;
+    }
+
+    /* Problemas */
+    .seccion-titulo {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--gris-texto);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 14px;
+    }
+
+    .problema-card {
+      background: var(--azul-panel);
+      border: 1px solid var(--azul-borde);
+      border-radius: var(--radio);
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+
+    .problema-card.critico  { border-left: 3px solid var(--rojo); }
+    .problema-card.advertencia { border-left: 3px solid var(--amarillo); }
+    .problema-card.info     { border-left: 3px solid var(--celeste); }
+
+    .problema-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 20px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+
+    .problema-header:hover { background: var(--azul-medio); }
+
+    .severidad-badge {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 3px 8px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      text-transform: uppercase;
+    }
+
+    .critico  .severidad-badge { background: rgba(231, 76, 60, 0.2);  color: var(--rojo); }
+    .advertencia .severidad-badge { background: rgba(243, 156, 18, 0.2); color: var(--amarillo); }
+    .info     .severidad-badge { background: rgba(59, 158, 222, 0.2);  color: var(--celeste); }
+
+    .problema-titulo {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--blanco);
+    }
+
+    .problema-meta {
+      font-size: 12px;
+      color: var(--gris-texto);
+      font-family: var(--fuente-mono);
+      margin-right: 8px;
+    }
+
+    .problema-chevron {
+      color: var(--gris-texto);
+      font-size: 12px;
+      transition: transform 0.2s;
+    }
+
+    .problema-card.abierto .problema-chevron {
+      transform: rotate(180deg);
+    }
+
+    .problema-cuerpo {
+      display: none;
+      padding: 0 20px 20px;
+      border-top: 1px solid var(--azul-borde);
+    }
+
+    .problema-card.abierto .problema-cuerpo {
+      display: block;
+    }
+
+    .detalle-seccion {
+      margin-top: 16px;
+    }
+
+    .detalle-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--gris-texto);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 6px;
+    }
+
+    .detalle-texto {
+      font-size: 13px;
+      color: var(--blanco-suave);
+      line-height: 1.6;
+    }
+
+    .cuils-lista {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .cuil-tag {
+      background: var(--azul-noche);
+      border: 1px solid var(--azul-borde);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-family: var(--fuente-mono);
+      color: var(--celeste);
+    }
+
+    .solucion-box {
+      background: rgba(46, 204, 113, 0.07);
+      border: 1px solid rgba(46, 204, 113, 0.2);
+      border-radius: var(--radio);
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--blanco-suave);
+      line-height: 1.6;
+    }
+
+    /* Sin problemas */
+    .sin-problemas {
+      background: var(--verde-bg);
+      border: 1px solid rgba(46,204,113,0.3);
+      border-radius: var(--radio);
+      padding: 24px;
+      text-align: center;
+      color: var(--verde);
+      font-size: 15px;
+    }
+
+    /* Botón nueva validación */
+    #btn-nueva {
+      display: block;
+      width: 100%;
+      margin-top: 32px;
+      padding: 13px;
+      background: transparent;
+      color: var(--celeste);
+      border: 1px solid var(--azul-borde);
+      border-radius: var(--radio);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    #btn-nueva:hover {
+      border-color: var(--celeste);
+      background: rgba(59, 158, 222, 0.05);
+    }
+
+    /* Error */
+    #error-box {
+      display: none;
+      background: var(--rojo-bg);
+      border: 1px solid var(--rojo);
+      border-radius: var(--radio);
+      padding: 20px 24px;
+      margin-top: 24px;
+      font-size: 14px;
+      color: #f5b7b1;
+    }
+
+    #error-box strong {
+      display: block;
+      color: var(--rojo);
+      margin-bottom: 6px;
+    }
+
+    /* ── RESPONSIVE ──────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      header { padding: 14px 20px; }
+      main   { padding: 28px 16px 60px; }
+      .stats-fila { grid-template-columns: repeat(2, 1fr); }
+      #zona-carga h1 { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-marca">
+    <div class="logo-icono">📋</div>
+    <div class="logo-texto">
+      <strong>Agente LSD</strong>
+      <span>Validador ARCA / AFIP</span>
+    </div>
+  </div>
+  <div class="header-badge" id="modelo-badge">cargando...</div>
+</header>
+
+<main>
+
+  <!-- ZONA DE CARGA -->
+  <section id="zona-carga">
+    <h1>Revisá tu archivo antes de presentarlo a ARCA</h1>
+    <p class="subtitulo">El agente analiza el TXT del Libro Sueldo Digital y te avisa si hay errores que van a causar rechazo.</p>
+
+    <div id="drop-zone">
+      <input type="file" id="input-archivo" accept=".txt" aria-label="Seleccionar archivo TXT">
+      <span class="drop-icono">📂</span>
+      <div class="drop-titulo">Arrastrá el archivo acá, o hacé clic para seleccionarlo</div>
+      <div class="drop-subtitulo">Formatos aceptados: <strong>.txt</strong> &nbsp;·&nbsp; Tamaño máximo: 50 MB</div>
+    </div>
+
+    <div id="archivo-seleccionado">
+      <span class="archivo-icono">📄</span>
+      <div class="archivo-info">
+        <div class="archivo-nombre" id="archivo-nombre-txt">—</div>
+        <div class="archivo-tamaño" id="archivo-tamaño-txt">—</div>
+      </div>
+      <button id="btn-quitar" title="Quitar archivo" aria-label="Quitar archivo">✕</button>
+    </div>
+
+    <button id="btn-analizar">Analizar archivo →</button>
+    <div id="error-box"><strong>Ocurrió un error</strong><span id="error-mensaje"></span></div>
+  </section>
+
+  <!-- PANEL DE ANÁLISIS (progreso en tiempo real) -->
+  <section id="panel-analisis">
+    <div id="progreso">
+      <div class="progreso-titulo">Analizando el archivo</div>
+      <ul class="pasos-lista" id="pasos-lista">
+        <li class="paso" data-herramienta="info_archivo">
+          <div class="paso-indicador"></div>
+          <span>Leyendo el archivo...</span>
+        </li>
+        <li class="paso" data-herramienta="validar_estructura">
+          <div class="paso-indicador"></div>
+          <span>Verificando estructura del archivo...</span>
+        </li>
+        <li class="paso" data-herramienta="validar_duplicados_reg04">
+          <div class="paso-indicador"></div>
+          <span>Buscando empleados con legajos duplicados...</span>
+        </li>
+        <li class="paso" data-herramienta="validar_comas_numericos">
+          <div class="paso-indicador"></div>
+          <span>Revisando formato de números...</span>
+        </li>
+        <li class="paso" data-herramienta="validar_bases_reg04">
+          <div class="paso-indicador"></div>
+          <span>Verificando bases imponibles...</span>
+        </li>
+        <li class="paso" data-herramienta="validar_cbu">
+          <div class="paso-indicador"></div>
+          <span>Controlando CBUs...</span>
+        </li>
+        <li class="paso" data-herramienta="analizar_conceptos_reg03">
+          <div class="paso-indicador"></div>
+          <span>Analizando conceptos declarados...</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- RESULTADO -->
+  <section id="resultado">
+
+    <!-- Veredicto -->
+    <div id="veredicto-banner" class="veredicto-banner">
+      <div class="veredicto-icono" id="veredicto-icono"></div>
+      <div class="veredicto-contenido">
+        <h2 id="veredicto-titulo"></h2>
+        <p id="veredicto-razon"></p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-fila">
+      <div class="stat-card">
+        <div class="stat-valor" id="stat-empleados">—</div>
+        <div class="stat-label">Empleados</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-valor" id="stat-conceptos">—</div>
+        <div class="stat-label">Conceptos</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-valor critico" id="stat-criticos">—</div>
+        <div class="stat-label">Errores críticos</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-valor advertencia" id="stat-advertencias">—</div>
+        <div class="stat-label">Advertencias</div>
+      </div>
+    </div>
+
+    <!-- Resumen -->
+    <div class="resumen-texto" id="resumen-texto"></div>
+
+    <!-- Lista de problemas -->
+    <div id="problemas-contenedor">
+      <div class="seccion-titulo" id="problemas-titulo"></div>
+      <div id="problemas-lista"></div>
+    </div>
+
+    <button id="btn-nueva">← Analizar otro archivo</button>
+  </section>
+
+</main>
+
+<script>
+  // ── ESTADO ─────────────────────────────────────────────────────────
+  let archivoSeleccionado = null;
+
+  // ── REFERENCIAS DOM ─────────────────────────────────────────────────
+  const dropZone          = document.getElementById('drop-zone');
+  const inputArchivo      = document.getElementById('input-archivo');
+  const archSeleccionado  = document.getElementById('archivo-seleccionado');
+  const archNombreTxt     = document.getElementById('archivo-nombre-txt');
+  const archTamañoTxt     = document.getElementById('archivo-tamaño-txt');
+  const btnQuitar         = document.getElementById('btn-quitar');
+  const btnAnalizar       = document.getElementById('btn-analizar');
+  const zonaCarga         = document.getElementById('zona-carga');
+  const panelAnalisis     = document.getElementById('panel-analisis');
+  const resultado         = document.getElementById('resultado');
+  const errorBox          = document.getElementById('error-box');
+  const errorMensaje      = document.getElementById('error-mensaje');
+  const modeloBadge       = document.getElementById('modelo-badge');
+
+  // ── HEALTH CHECK ────────────────────────────────────────────────────
+  fetch('/health').then(r => r.json()).then(d => {
+    modeloBadge.textContent = d.modelo || 'modelo desconocido';
+    if (!d.api_configurada) {
+      mostrarError('La API Key no está configurada. Contactá a soporte técnico (lquiroga).');
+    }
+  }).catch(() => {
+    modeloBadge.textContent = 'sin conexión';
+  });
+
+  // ── DRAG & DROP ─────────────────────────────────────────────────────
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('arrastrando');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('arrastrando');
+  });
+
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('arrastrando');
+    const archivo = e.dataTransfer.files[0];
+    if (archivo) seleccionarArchivo(archivo);
+  });
+
+  inputArchivo.addEventListener('change', () => {
+    if (inputArchivo.files[0]) seleccionarArchivo(inputArchivo.files[0]);
+  });
+
+  function seleccionarArchivo(archivo) {
+    if (!archivo.name.toLowerCase().endsWith('.txt')) {
+      mostrarError('El archivo debe tener extensión .txt');
+      return;
+    }
+    archivoSeleccionado = archivo;
+    archNombreTxt.textContent = archivo.name;
+    archTamañoTxt.textContent = formatearTamaño(archivo.size);
+    archSeleccionado.style.display = 'flex';
+    btnAnalizar.style.display = 'block';
+    ocultarError();
+  }
+
+  btnQuitar.addEventListener('click', () => {
+    archivoSeleccionado = null;
+    inputArchivo.value = '';
+    archSeleccionado.style.display = 'none';
+    btnAnalizar.style.display = 'none';
+  });
+
+  // ── ANALIZAR ────────────────────────────────────────────────────────
+  btnAnalizar.addEventListener('click', iniciarAnalisis);
+
+  function iniciarAnalisis() {
+    if (!archivoSeleccionado) return;
+
+    // Mostrar panel de análisis
+    zonaCarga.style.display = 'none';
+    resultado.style.display = 'none';
+    panelAnalisis.style.display = 'block';
+    errorBox.style.display = 'none';
+
+    // Reset pasos
+    document.querySelectorAll('.paso').forEach(p => {
+      p.classList.remove('activo', 'listo');
+    });
+
+    // Subir archivo
+    const formData = new FormData();
+    formData.append('archivo', archivoSeleccionado);
+
+    const evtSource = new EventSource('/analizar?' + new URLSearchParams());
+
+    // Usamos fetch + ReadableStream para POST con SSE
+    fetch('/analizar', { method: 'POST', body: formData })
+      .then(response => {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        function leer() {
+          reader.read().then(({ done, value }) => {
+            if (done) return;
+            buffer += decoder.decode(value, { stream: true });
+            const lineas = buffer.split('\n\n');
+            buffer = lineas.pop();
+            lineas.forEach(linea => {
+              if (linea.startsWith('data: ')) {
+                try {
+                  const evento = JSON.parse(linea.slice(6));
+                  procesarEvento(evento);
+                } catch (e) { /* ignorar */ }
+              }
+            });
+            leer();
+          });
+        }
+        leer();
+      })
+      .catch(err => {
+        mostrarPanelError('Error de conexión: ' + err.message);
+      });
+  }
+
+  function procesarEvento(evento) {
+    switch (evento.tipo) {
+      case 'herramienta':
+        marcarPasoActivo(evento.nombre);
+        break;
+
+      case 'informe':
+        marcarTodosListos();
+        setTimeout(() => mostrarInforme(evento.data), 400);
+        break;
+
+      case 'texto_libre':
+        // El agente respondió texto en vez de JSON (fallback)
+        marcarTodosListos();
+        setTimeout(() => mostrarTextoLibre(evento.data), 400);
+        break;
+
+      case 'error':
+        mostrarPanelError(evento.mensaje);
+        break;
+
+      case 'fin':
+        // Nada extra
+        break;
+    }
+  }
+
+  function marcarPasoActivo(nombreHerramienta) {
+    const pasos = document.querySelectorAll('.paso');
+    pasos.forEach(paso => {
+      if (paso.classList.contains('activo')) {
+        paso.classList.remove('activo');
+        paso.classList.add('listo');
+      }
+    });
+    const pasoTarget = document.querySelector(`.paso[data-herramienta="${nombreHerramienta}"]`);
+    if (pasoTarget) pasoTarget.classList.add('activo');
+  }
+
+  function marcarTodosListos() {
+    document.querySelectorAll('.paso').forEach(p => {
+      p.classList.remove('activo');
+      p.classList.add('listo');
+    });
+  }
+
+  // ── MOSTRAR INFORME ──────────────────────────────────────────────────
+  function mostrarInforme(data) {
+    panelAnalisis.style.display = 'none';
+    resultado.style.display = 'block';
+
+    // Veredicto
+    const banner = document.getElementById('veredicto-banner');
+    const icono  = document.getElementById('veredicto-icono');
+    const titulo = document.getElementById('veredicto-titulo');
+    const razon  = document.getElementById('veredicto-razon');
+
+    const v = (data.veredicto || '').toUpperCase();
+    banner.className = 'veredicto-banner';
+
+    if (v === 'PRESENTABLE') {
+      banner.classList.add('presentable');
+      icono.textContent = '✅';
+      titulo.textContent = 'El archivo puede presentarse a ARCA';
+    } else if (v === 'SERÁ RECHAZADO' || v === 'SERA RECHAZADO') {
+      banner.classList.add('rechazado');
+      icono.textContent = '🚫';
+      titulo.textContent = 'ARCA va a rechazar este archivo';
+    } else {
+      banner.classList.add('revisar');
+      icono.textContent = '⚠️';
+      titulo.textContent = 'Revisar antes de presentar';
+    }
+
+    razon.textContent = data.veredicto_razon || '';
+
+    // Stats
+    const stats = data.estadisticas || {};
+    document.getElementById('stat-empleados').textContent    = stats.total_empleados ?? '—';
+    document.getElementById('stat-conceptos').textContent    = stats.total_conceptos ?? '—';
+    document.getElementById('stat-criticos').textContent     = stats.errores_criticos ?? 0;
+    document.getElementById('stat-advertencias').textContent = stats.advertencias ?? 0;
+
+    // Resumen
+    document.getElementById('resumen-texto').textContent = data.resumen || '';
+
+    // Problemas
+    const lista = document.getElementById('problemas-lista');
+    const tituloSec = document.getElementById('problemas-titulo');
+    lista.innerHTML = '';
+
+    const problemas = data.problemas || [];
+    if (problemas.length === 0) {
+      tituloSec.textContent = '';
+      lista.innerHTML = `
+        <div class="sin-problemas">
+          ✅ No se encontraron problemas. El archivo está limpio.
+        </div>`;
+    } else {
+      tituloSec.textContent = `${problemas.length} problema${problemas.length > 1 ? 's' : ''} encontrado${problemas.length > 1 ? 's' : ''}`;
+
+      // Ordenar: CRITICO primero
+      const orden = { 'CRITICO': 0, 'ADVERTENCIA': 1, 'INFO': 2 };
+      problemas.sort((a, b) => (orden[a.severidad] ?? 9) - (orden[b.severidad] ?? 9));
+
+      problemas.forEach((p, i) => {
+        const sev = (p.severidad || 'INFO').toLowerCase().replace('í','i');
+        const div = document.createElement('div');
+        div.className = `problema-card ${sev}`;
+        if (i === 0) div.classList.add('abierto'); // Abrir el primero
+
+        const cuils = (p.ejemplos_cuil || []).slice(0, 5);
+        const cuilsHtml = cuils.length
+          ? cuils.map(c => `<span class="cuil-tag">${c}</span>`).join('')
+          : '';
+
+        div.innerHTML = `
+          <div class="problema-header">
+            <span class="severidad-badge">${p.severidad || 'INFO'}</span>
+            <span class="problema-titulo">${escHtml(p.titulo || '')}</span>
+            ${p.cuils_afectados ? `<span class="problema-meta">${p.cuils_afectados} empleado${p.cuils_afectados !== 1 ? 's' : ''}</span>` : ''}
+            <span class="problema-chevron">▾</span>
+          </div>
+          <div class="problema-cuerpo">
+            <div class="detalle-seccion">
+              <div class="detalle-label">¿Qué está pasando?</div>
+              <div class="detalle-texto">${escHtml(p.descripcion || '')}</div>
+            </div>
+            ${cuilsHtml ? `
+            <div class="detalle-seccion">
+              <div class="detalle-label">Ejemplos de empleados afectados</div>
+              <div class="cuils-lista">${cuilsHtml}</div>
+            </div>` : ''}
+            <div class="detalle-seccion">
+              <div class="detalle-label">¿Por qué ocurre?</div>
+              <div class="detalle-texto">${escHtml(p.causa || '')}</div>
+            </div>
+            <div class="detalle-seccion">
+              <div class="detalle-label">¿Cómo se soluciona?</div>
+              <div class="solucion-box">${escHtml(p.solucion || '')}</div>
+            </div>
+          </div>
+        `;
+
+        div.querySelector('.problema-header').addEventListener('click', () => {
+          div.classList.toggle('abierto');
+        });
+
+        lista.appendChild(div);
+      });
+    }
+  }
+
+  function mostrarTextoLibre(texto) {
+    // Fallback si el agente no devolvió JSON
+    panelAnalisis.style.display = 'none';
+    resultado.style.display = 'block';
+
+    document.getElementById('veredicto-banner').className = 'veredicto-banner revisar';
+    document.getElementById('veredicto-icono').textContent = '📋';
+    document.getElementById('veredicto-titulo').textContent = 'Análisis completado';
+    document.getElementById('veredicto-razon').textContent = 'Revisá el detalle a continuación.';
+    document.getElementById('resumen-texto').textContent = texto;
+    document.getElementById('problemas-titulo').textContent = '';
+    document.getElementById('problemas-lista').innerHTML = '';
+  }
+
+  function mostrarPanelError(msg) {
+    panelAnalisis.style.display = 'none';
+    zonaCarga.style.display = 'block';
+    mostrarError(msg);
+  }
+
+  // ── NUEVA VALIDACIÓN ─────────────────────────────────────────────────
+  document.getElementById('btn-nueva').addEventListener('click', () => {
+    resultado.style.display = 'none';
+    panelAnalisis.style.display = 'none';
+    zonaCarga.style.display = 'block';
+    archivoSeleccionado = null;
+    inputArchivo.value = '';
+    archSeleccionado.style.display = 'none';
+    btnAnalizar.style.display = 'none';
+    ocultarError();
+  });
+
+  // ── UTILS ────────────────────────────────────────────────────────────
+  function mostrarError(msg) {
+    errorBox.style.display = 'block';
+    errorMensaje.textContent = msg;
+  }
+
+  function ocultarError() {
+    errorBox.style.display = 'none';
+  }
+
+  function formatearTamaño(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+
+</body>
+</html>
