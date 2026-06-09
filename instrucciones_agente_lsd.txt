@@ -1,0 +1,90 @@
+AGENTE LSD — INSTRUCCIONES DE USO
+===================================
+
+El agente valida archivos TXT del Libro Sueldo Digital (AFIP/ARCA)
+y responde preguntas técnicas sobre el módulo LSD Nuevo de e-SUELDOS.
+
+
+REQUISITOS
+----------
+1. Python 3.8 o superior
+   Verificar: abrir CMD y escribir   python --version
+
+2. Librería Anthropic
+   Instalar ejecutando en CMD:   pip install anthropic
+
+3. API Key de Anthropic
+   - Pedírsela a Luis (lquiroga)
+   - Es un string que empieza con "sk-ant-..."
+
+
+CONFIGURAR LA API KEY (hacerlo una sola vez)
+--------------------------------------------
+En Windows, abrir CMD y ejecutar:
+
+   setx ANTHROPIC_API_KEY "sk-ant-XXXX..."
+
+Cerrar y volver a abrir el CMD para que tome efecto.
+Verificar con:   echo %ANTHROPIC_API_KEY%
+
+
+CÓMO USARLO
+-----------
+Hay dos modos:
+
+  1. VALIDAR UN ARCHIVO TXT:
+     Copiar el archivo .txt del LSD en la misma carpeta que agente_lsd.py
+     y ejecutar en CMD:
+
+        python agente_lsd.py nombre_del_archivo.txt
+
+     El agente analiza el archivo y reporta errores encontrados.
+
+  2. MODO CONSULTA (sin archivo):
+     Solo ejecutar:
+
+        python agente_lsd.py
+
+     Se abre un chat interactivo. Podés hacer preguntas como:
+       - "¿Por qué el empleado X no tiene detracción?"
+       - "¿Qué significa el error E001 de ARCA?"
+       - "¿Cómo se calcula la Base 10?"
+       - "¿Qué diferencia hay entre Zona J y Zona G?"
+
+
+QUÉ DETECTA AUTOMÁTICAMENTE
+-----------------------------
+  - REG04 duplicado (empleado con dos legajos, bases duplicadas)
+  - Comas en campos numéricos (formato argentino sin normalizar)
+  - Concepto 560.000 en lugar de 570.000 (Guía N°45 ARCA)
+  - CBU con longitud incorrecta
+  - Errores de estructura (REG01 duplicado, registros huérfanos, etc.)
+  - Bases 1/4/5 que superan el tope máximo MOPRE
+  - Base10 informada cuando no hay detracción aplicable
+  - Días y horas simultáneamente no-cero en REG04
+
+
+EJEMPLOS DE PREGUNTAS QUE PUEDE RESPONDER
+------------------------------------------
+  - "El legajo 45 no tiene detracción, empresa usa tipo M y tipo S. ¿Por qué?"
+  - "La empresa 8403 solo muestra 1 legajo de 105. ¿Qué pasó?"
+  - "¿Cuál es el minModPre de junio 2026?"
+  - "¿Cómo funciona el Caso 7.1 de detracción?"
+  - "¿Qué campos van en el REG04 y en qué posición?"
+
+
+PROBLEMAS FRECUENTES
+---------------------
+  Error: "ANTHROPIC_API_KEY not set"
+  → La variable de entorno no está configurada. Repetir el paso de configuración.
+
+  Error: "No module named anthropic"
+  → Ejecutar:  pip install anthropic
+
+  El agente no responde / timeout
+  → Verificar conexión a internet. La API es externa (Anthropic, USA).
+
+
+CONTACTO
+--------
+Cualquier duda técnica sobre el agente: Luis Quiroga (lquiroga)
