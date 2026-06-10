@@ -1,4 +1,17 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
 venv/
+.venv/
+ 
+# API Key — nunca commitear
 .env
+ 
+# Archivos LSD (contienen datos de empleados: CUIL, CBU, remuneraciones)
+*.txt
+!README.md
+ 
+# Temporales Flask/sistema
+lsd_*.txt
+tmp/

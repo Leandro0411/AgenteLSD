@@ -12,12 +12,20 @@ import tempfile
 import threading
 import queue
 import time
+
+# Cargar variables de entorno desde .env si existe
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv no instalado; usar variables de entorno del sistema
+
 from flask import Flask, render_template, request, Response, jsonify
 import anthropic
 from collections import defaultdict
 
 # Importar todo del agente original
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from agente_lsd import (
     TOOLS, TOOL_FUNCTIONS, SYSTEM_PROMPT, MODELO,
     tool_info_archivo, tool_validar_estructura,
@@ -78,10 +86,10 @@ Respondé ÚNICAMENTE con el JSON, sin markdown, sin texto antes ni después.
 
 def ejecutar_agente_streaming(ruta: str, q: queue.Queue):
     """Ejecuta el agente y pone eventos en la queue para SSE."""
-    
+
     api_key = os.environ.get('ANTHROPIC_API_KEY')
     if not api_key:
-        q.put({"tipo": "error", "mensaje": "API Key no configurada. Contactá a soporte técnico."})
+        q.put({"tipo": "error", "mensaje": "API Key no configurada. Creá el archivo .env con ANTHROPIC_API_KEY=sk-ant-..."})
         q.put(None)
         return
 
@@ -141,7 +149,6 @@ def ejecutar_agente_streaming(ruta: str, q: queue.Queue):
                         informe = json.loads(texto)
                         q.put({"tipo": "informe", "data": informe})
                     except json.JSONDecodeError:
-                        # Si no pudo parsear JSON, mandar el texto igual
                         q.put({"tipo": "texto_libre", "data": texto})
             break
 
@@ -247,14 +254,18 @@ if __name__ == '__main__':
     print("=" * 55)
     print("  AGENTE LSD — Interfaz Web")
     print("=" * 55)
-    
+
     if not os.environ.get('ANTHROPIC_API_KEY'):
         print()
         print("  ⚠  ANTHROPIC_API_KEY no está configurada.")
-        print("     Configurala antes de iniciar:")
-        print("     Windows: setx ANTHROPIC_API_KEY \"sk-ant-...\"")
+        print("     Creá el archivo .env en esta carpeta con:")
+        print("     ANTHROPIC_API_KEY=sk-ant-...")
         print()
-    
+    else:
+        print()
+        print("  ✓  API Key cargada correctamente.")
+        print()
+
     print("  Abrí tu navegador en:  http://localhost:5000")
     print("=" * 55)
     print()
