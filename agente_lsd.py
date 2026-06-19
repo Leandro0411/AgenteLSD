@@ -1,35 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-agente_lsd.py — Agente Claude de validación y consulta LSD (Libro Sueldo Digital) para ARCA/AFIP
-=================================================================================================
-Detecta errores de validación cruzada ANTES de presentar a ARCA.
-También responde preguntas sobre la lógica interna del módulo LSD Nuevo (e-SUELDOS).
+agente_lsd.py — Agente Gemini de validación LSD (Libro Sueldo Digital) para ARCA/AFIP
+=======================================================================================
+[Misma funcionalidad que la versión Anthropic, adaptado a Google Gemini 3.5 Flash]
 
 USO:
-    python agente_lsd.py <archivo.txt>            # validar un TXT
+    python agente_lsd.py <archivo.txt>
     python agente_lsd.py ErroresValidacion_30663343501_20260507.txt
 
 REQUISITOS:
-    pip install anthropic
-    Variable de entorno: ANTHROPIC_API_KEY=sk-ant-...
+    pip install google-genai
+    Variable de entorno: GEMINI_API_KEY=AIza...
 
-ERRORES QUE DETECTA:
-    A) REG04 duplicado por empleado con dos legajos activos (ratio exacto 2,0x)
-    B) Coma en campos numéricos por formato argentino sin normalizar (bug interno #30999)
-    C) Base4=0 con Base10≠0 → concepto ARCA 560.000 en lugar de 570.000 (Guía N°45)
-    D) CBU con longitud incorrecta (≠ 22 dígitos) para pago distinto de efectivo
-    E) Errores estructurales: REG01 duplicado, huérfanos en REG03/REG04, etc.
-
-CONOCIMIENTO INCORPORADO (jun-2026):
-    - Arquitectura completa del módulo LSD Nuevo (ControladorLibroDigitalNuevo,
-      ExpertoReportesLiquidacion, EstrategiaReporteLibroDigital)
-    - Reglas de cálculo Detracción / Rem10 (ticket #31049)
-    - Valores MOPRE 2026 (minModPre, maxModPre, sac por mes)
-    - Bugs corregidos: D) detracción=0 en mes 6/12, E) 1 legajo de muchos,
-      F) SAC complementaria sin detracción, G) detracción SAC incompleta M+S,
-      H) REM>10M notación científica, I) días+horas simultáneos en TXT,
-      J) REM TOTAL no se guardaba desde front, K) Base10 sin detracción
+    Opcional (base de conocimiento PDF):
+    Correr primero: python knowledge_loader.py
 """
 
 import sys
@@ -37,48 +22,59 @@ import os
 import json
 import re
 from collections import defaultdict
-import anthropic
+
+# ── Importar herramientas de cruce con errores ARCA (opcional) ────────────────
+try:
+    from validador_errores import TOOLS_ERRORES, TOOL_FUNCTIONS_ERRORES
+except ImportError:
+    TOOLS_ERRORES = []
+    TOOL_FUNCTIONS_ERRORES = {}
+
+# ── Importar refs de PDFs de normativa (opcional) ────────────────────────────
+try:
+    from knowledge_loader import cargar_refs
+except ImportError:
+    def cargar_refs(): return []
 
 
 # ---------------------------------------------------------------------------
 # CONFIGURACIÓN
 # ---------------------------------------------------------------------------
 
-# Cambiá este string si tenés acceso a un modelo más nuevo
-MODELO = "claude-sonnet-4-6"
+MODELO = "gemini-2.5-flash"
 
 # ---------------------------------------------------------------------------
 # Constantes de formato LSD (0-indexed, spec AFIP LSD v2.x)
 # ---------------------------------------------------------------------------
 
-TIPO_START = 0
-TIPO_END   = 2
+TIPO_START = 0;  TIPO_END   = 2
+CUIL_START = 2;  CUIL_END   = 13
+REG03_COD_START = 13; REG03_COD_END = 20
+REG03_IMP_START = 29; REG03_IMP_END = 44
+REG04_BASE4_START  = 220; REG04_BASE4_END    = 235
+REG04_BASE10_START = 340; REG04_BASE10_END   = 355
 
-# CUIL del empleado: posiciones 2-12 (11 dígitos), presente en REG02, REG03, REG04
-CUIL_START = 2
-CUIL_END   = 13
+# Nuevas constantes — spec LSD v2 completa (posiciones 0-indexed)
+REG01_PERIODO_START       = 15;  REG01_PERIODO_END       = 21
+REG01_CANT_REG04_START    = 29;  REG01_CANT_REG04_END    = 35
+REG04_REM_BRUTA_START     = 160; REG04_REM_BRUTA_END     = 175
+REG04_BASE1_START         = 175; REG04_BASE1_END         = 190
+REG04_HORAS_EXTRAS_START  = 340; REG04_HORAS_EXTRAS_END  = 355
 
-# REG03: código de concepto ARCA — posiciones 13-19 (7 dígitos, ej: "5600000")
-REG03_COD_START = 13
-REG03_COD_END   = 20
-
-# REG03: importe — posiciones 20-35 (16 chars)
-REG03_IMP_START = 20
-REG03_IMP_END   = 36
-
-# REG04: posiciones aproximadas de bases imponibles (15 chars cada una)
-# Referencia interna: LibroDigitalReg04.java @Linea annotations
-REG04_BASE4_START  = 220   # Base 4 — aportes OS/FSR
-REG04_BASE4_END    = 235
-REG04_BASE10_START = 340   # Base 10 — Ley 27.430
-REG04_BASE10_END   = 355
+# Longitudes exactas por tipo (ancho fijo)
+LONGITUDES_REQUERIDAS = {
+    '01': 35,
+    '02': 115,
+    '03': 51,   # sin el sufijo ".e-s" de e-SUELDOS (aceptable hasta 55)
+    '04': 370,  # mínimo; el CBU y forma de pago se agregan al final
+    '05': 65,
+}
 
 # ---------------------------------------------------------------------------
 # Lectura del archivo
 # ---------------------------------------------------------------------------
 
 def _leer_lineas(ruta: str) -> list[str]:
-    """Lee el TXT de LSD probando encodings comunes."""
     for enc in ('utf-8', 'latin-1', 'cp1252'):
         try:
             with open(ruta, encoding=enc) as f:
@@ -87,24 +83,17 @@ def _leer_lineas(ruta: str) -> list[str]:
             continue
     raise ValueError(f"No se pudo decodificar {ruta}")
 
-
 def _tipo(linea: str) -> str:
     return linea[TIPO_START:TIPO_END] if len(linea) >= TIPO_END else '??'
-
 
 def _cuil(linea: str) -> str:
     return linea[CUIL_START:CUIL_END] if len(linea) >= CUIL_END else '?'
 
-
 # ---------------------------------------------------------------------------
-# HERRAMIENTAS DE VALIDACIÓN (ejecutadas en Python, llamadas por Claude)
+# HERRAMIENTAS DE VALIDACIÓN
 # ---------------------------------------------------------------------------
 
 def tool_info_archivo(ruta: str) -> dict:
-    """
-    Información básica del archivo: tamaño, líneas totales y
-    distribución de registros por tipo (REG01 a REG05).
-    """
     try:
         lineas = _leer_lineas(ruta)
         conteo: dict[str, int] = defaultdict(int)
@@ -126,24 +115,15 @@ def tool_info_archivo(ruta: str) -> dict:
 
 
 def tool_validar_estructura(ruta: str) -> dict:
-    """
-    Valida la estructura del archivo LSD:
-    - Exactamente 1 REG01 (primera línea)
-    - Exactamente 1 REG05 (última línea)
-    - Todo CUIL en REG03/REG04 debe tener su REG02
-    - No debe haber tipos de registro desconocidos
-    """
     try:
         lineas = _leer_lineas(ruta)
         errores = []
         advertencias = []
-
         tipos = [_tipo(l) for l in lineas if l.strip()]
         conteo: dict[str, int] = defaultdict(int)
         for t in tipos:
             conteo[t] += 1
 
-        # REG01
         if conteo.get('01', 0) == 0:
             errores.append("FALTA REG01: el archivo no tiene registro de cabecera (tipo 01).")
         elif conteo['01'] > 1:
@@ -153,11 +133,9 @@ def tool_validar_estructura(ruta: str) -> dict:
             if _tipo(primera) != '01':
                 errores.append("REG01 no es la primera línea del archivo.")
 
-        # REG02
         if conteo.get('02', 0) == 0:
             errores.append("FALTA REG02: no hay registros de empleados (tipo 02).")
 
-        # REG05
         if conteo.get('05', 0) == 0:
             advertencias.append("FALTA REG05: el archivo no tiene registro de cierre (tipo 05).")
         elif conteo['05'] > 1:
@@ -167,7 +145,6 @@ def tool_validar_estructura(ruta: str) -> dict:
             if _tipo(ultima) != '05':
                 advertencias.append("REG05 no es la última línea del archivo.")
 
-        # Huérfanos REG03/REG04 sin REG02
         cuils_02: set[str] = set()
         cuils_03: set[str] = set()
         cuils_04: set[str] = set()
@@ -176,27 +153,17 @@ def tool_validar_estructura(ruta: str) -> dict:
                 continue
             t = _tipo(l)
             c = _cuil(l)
-            if t == '02':
-                cuils_02.add(c)
-            elif t == '03':
-                cuils_03.add(c)
-            elif t == '04':
-                cuils_04.add(c)
+            if t == '02': cuils_02.add(c)
+            elif t == '03': cuils_03.add(c)
+            elif t == '04': cuils_04.add(c)
 
         huerfanos_03 = cuils_03 - cuils_02
         huerfanos_04 = cuils_04 - cuils_02
         if huerfanos_03:
-            errores.append(
-                f"REG03 HUÉRFANOS: {len(huerfanos_03)} CUILs tienen conceptos (REG03) "
-                f"sin cabecera REG02. Ejemplos: {sorted(huerfanos_03)[:5]}"
-            )
+            errores.append(f"REG03 HUÉRFANOS: {len(huerfanos_03)} CUILs tienen conceptos sin cabecera REG02. Ejemplos: {sorted(huerfanos_03)[:5]}")
         if huerfanos_04:
-            errores.append(
-                f"REG04 HUÉRFANOS: {len(huerfanos_04)} CUILs tienen bases (REG04) "
-                f"sin cabecera REG02. Ejemplos: {sorted(huerfanos_04)[:5]}"
-            )
+            errores.append(f"REG04 HUÉRFANOS: {len(huerfanos_04)} CUILs tienen bases sin cabecera REG02. Ejemplos: {sorted(huerfanos_04)[:5]}")
 
-        # Tipos desconocidos
         extraños = set(conteo) - {'01', '02', '03', '04', '05'}
         if extraños:
             advertencias.append(f"Tipos de registro desconocidos: {sorted(extraños)}")
@@ -206,10 +173,8 @@ def tool_validar_estructura(ruta: str) -> dict:
             "errores": errores,
             "advertencias": advertencias,
             "resumen": {
-                "reg01": conteo.get('01', 0),
-                "reg02": conteo.get('02', 0),
-                "reg03": conteo.get('03', 0),
-                "reg04": conteo.get('04', 0),
+                "reg01": conteo.get('01', 0), "reg02": conteo.get('02', 0),
+                "reg03": conteo.get('03', 0), "reg04": conteo.get('04', 0),
                 "reg05": conteo.get('05', 0),
                 "cuils_unicos_reg02": len(cuils_02),
                 "cuils_unicos_reg03": len(cuils_03),
@@ -221,29 +186,19 @@ def tool_validar_estructura(ruta: str) -> dict:
 
 
 def tool_validar_duplicados_reg04(ruta: str) -> dict:
-    """
-    Bug A: CUILs con más de un registro REG04.
-    Ocurre cuando un empleado tiene dos legajos activos (ej: Preceptor + Profesor).
-    ARCA suma todos los REG04 del mismo CUIL → bases duplicadas → ratio 2,0x.
-    El REG02 ya tiene deduplicación; el REG04 no.
-    """
     try:
         lineas = _leer_lineas(ruta)
         conteo_por_cuil: dict[str, int] = defaultdict(int)
         lineas_por_cuil: dict[str, list[int]] = defaultdict(list)
-
         for i, l in enumerate(lineas, 1):
             if l.strip() and _tipo(l) == '04':
                 c = _cuil(l)
                 conteo_por_cuil[c] += 1
                 lineas_por_cuil[c].append(i)
-
         duplicados = {
             c: {"cantidad_reg04": cnt, "en_lineas": lineas_por_cuil[c]}
-            for c, cnt in conteo_por_cuil.items()
-            if cnt > 1
+            for c, cnt in conteo_por_cuil.items() if cnt > 1
         }
-
         return {
             "ok": len(duplicados) == 0,
             "total_reg04": sum(conteo_por_cuil.values()),
@@ -251,12 +206,8 @@ def tool_validar_duplicados_reg04(ruta: str) -> dict:
             "cuils_con_duplicado": len(duplicados),
             "detalle": duplicados,
             "diagnostico": (
-                "BUG A DETECTADO: Hay CUILs con más de un REG04. "
-                "ARCA suma todos los REG04 del mismo CUIL obteniendo bases duplicadas. "
-                "La relación informada/correcta es exactamente 2,0x. "
-                "Solución: consolidar REG04 por CUIL (igual al fix ya aplicado en REG02)."
-                if duplicados
-                else "Sin duplicados REG04. OK."
+                "BUG A DETECTADO: Hay CUILs con más de un REG04. ARCA suma todos los REG04 → bases duplicadas (ratio 2,0x). Solución: consolidar REG04 por CUIL."
+                if duplicados else "Sin duplicados REG04. OK."
             )
         }
     except Exception as e:
@@ -264,44 +215,27 @@ def tool_validar_duplicados_reg04(ruta: str) -> dict:
 
 
 def tool_validar_comas_numericos(ruta: str) -> dict:
-    """
-    Bug B (interno #30999): comas en campos numéricos de REG03 y REG04.
-    El formato correcto para ARCA es 'punto decimal, sin separador de miles' (ej: 1000.50).
-    Una coma indica que el valor fue guardado en formato argentino (1.000,50) sin normalizar.
-    """
     try:
         lineas = _leer_lineas(ruta)
         afectados = []
-
         for i, l in enumerate(lineas, 1):
-            if not l.strip():
+            if not l.strip() or _tipo(l) not in ('03', '04'):
                 continue
-            t = _tipo(l)
-            if t not in ('03', '04'):
-                continue
-            # Los primeros 13 chars son CUIL/tipo — los numéricos vienen después
             campos_num = l[13:] if len(l) > 13 else ''
             if ',' in campos_num:
                 posiciones = [j + 13 for j, c in enumerate(campos_num) if c == ',']
                 afectados.append({
-                    "linea": i,
-                    "tipo_reg": t,
-                    "cuil": _cuil(l),
+                    "linea": i, "tipo_reg": _tipo(l), "cuil": _cuil(l),
                     "posiciones_con_coma": posiciones[:10],
                     "extracto": l[max(0, posiciones[0]-5):posiciones[0]+10] if posiciones else ''
                 })
-
         return {
             "ok": len(afectados) == 0,
             "registros_con_coma": len(afectados),
             "detalle": afectados[:50],
             "diagnostico": (
-                "BUG B DETECTADO (interno #30999): Hay campos numéricos con coma. "
-                "El sistema los guardó en formato argentino (1.000,50) sin normalizar antes de exportar. "
-                "Efecto: ARCA rechaza el registro por formato inválido. "
-                "Solución: corregir los valores en el sistema y regenerar el LSD."
-                if afectados
-                else "Sin comas en campos numéricos. OK."
+                "BUG B DETECTADO (#30999): Hay campos numéricos con coma. Guardados en formato argentino sin normalizar. ARCA rechaza el registro."
+                if afectados else "Sin comas en campos numéricos. OK."
             )
         }
     except Exception as e:
@@ -309,70 +243,35 @@ def tool_validar_comas_numericos(ruta: str) -> dict:
 
 
 def tool_validar_bases_reg04(ruta: str) -> dict:
-    """
-    Bug C (Guía N°45 ARCA, dic-2025): REG04 con Base4=0 y Base10 con valor.
-    Indica que una remuneración docente No-SIPA (Actividad 16, IPS provincial)
-    está declarada con concepto ARCA 560.000 en lugar del 570.000 requerido.
-
-    Con 560.000 (incorrecto): Base1/2/3=0, Base4=0, Base10=importe
-    Con 570.000 (correcto):   Base1/2/3=0, Base4=importe, Base8=contrib, Base10=0
-
-    Las posiciones de base4 (~220-234) y base10 (~340-354) son aproximadas.
-    """
     try:
         lineas = _leer_lineas(ruta)
         afectados = []
         correctos = []
         registro_corto = 0
-
         for i, l in enumerate(lineas, 1):
             if not l.strip() or _tipo(l) != '04':
                 continue
-
             if len(l) <= REG04_BASE10_END:
                 registro_corto += 1
                 continue
-
             b4_raw  = l[REG04_BASE4_START:REG04_BASE4_END].strip()
             b10_raw = l[REG04_BASE10_START:REG04_BASE10_END].strip()
-
-            # Solo procesar si los campos parecen numéricos
-            def es_num(s: str) -> bool:
-                return bool(s) and re.match(r'^-?\d+(\.\d+)?$', s)
-
+            def es_num(s): return bool(s) and re.match(r'^-?\d+(\.\d+)?$', s)
             if es_num(b4_raw) and es_num(b10_raw):
-                b4  = float(b4_raw)
-                b10 = float(b10_raw)
+                b4 = float(b4_raw); b10 = float(b10_raw)
                 if b4 == 0 and b10 != 0:
-                    afectados.append({
-                        "linea": i,
-                        "cuil": _cuil(l),
-                        "base4_pos220_234": b4_raw,
-                        "base10_pos340_354": b10_raw,
-                        "problema": "Base4=0 / Base10≠0 → probable concepto 560k en lugar de 570k"
-                    })
+                    afectados.append({"linea": i, "cuil": _cuil(l), "base4": b4_raw, "base10": b10_raw, "problema": "Base4=0 / Base10≠0 → probable concepto 560k en lugar de 570k"})
                 elif b4 != 0:
                     correctos.append(_cuil(l))
-
         return {
             "ok": len(afectados) == 0,
             "cuils_con_base4_cero_base10_con_valor": len(afectados),
             "cuils_con_base4_correcto_no_cero": len(correctos),
-            "registros_demasiado_cortos_para_verificar": registro_corto,
+            "registros_demasiado_cortos": registro_corto,
             "detalle": afectados[:30],
-            "nota": (
-                "Posiciones base4=220-234, base10=340-354 son aproximadas "
-                "(basadas en LibroDigitalReg04.java @Linea annotations). "
-                "Verificar con el reporte de errores ARCA si hay dudas."
-            ),
             "diagnostico": (
-                "BUG C DETECTADO (Guía N°45): Hay REG04 con Base4=0 y Base10 con valor. "
-                "Los docentes No-SIPA (Actividad 16) deben declararse con concepto 570.000. "
-                "Con 560.000 (actual): Base4=0, Base10=importe — ARCA rechaza. "
-                "Con 570.000 (correcto): Base4=OS/FSR, Base8=contrib.OS/FSR, Base10=0. "
-                "Solución: configurar concepto 570.000 en el sistema (no requiere código)."
-                if afectados
-                else "Sin patrón Base4=0/Base10≠0 detectado. OK."
+                "BUG C DETECTADO (Guía N°45): REG04 con Base4=0 y Base10 con valor. Docentes No-SIPA deben usar concepto 570.000."
+                if afectados else "Sin patrón Base4=0/Base10≠0. OK."
             )
         }
     except Exception as e:
@@ -380,288 +279,472 @@ def tool_validar_bases_reg04(ruta: str) -> dict:
 
 
 def tool_validar_cbu(ruta: str) -> dict:
-    """
-    Detecta CBU con formato incorrecto en REG04.
-    El CBU debe ser exactamente 22 dígitos numéricos para empleados
-    con forma de pago distinta de efectivo.
-
-    Estrategia: busca el primer bloque de 20-24 dígitos consecutivos
-    en los últimos 50 chars del registro REG04 como candidato a CBU.
-    """
     try:
         lineas = _leer_lineas(ruta)
         problemas = []
         sin_cbu_candidato = 0
-
         for i, l in enumerate(lineas, 1):
             if not l.strip() or _tipo(l) != '04':
                 continue
-
             cola = l[-50:] if len(l) > 50 else l[13:]
-
-            # Buscar bloque de dígitos de 20-24 chars (CBU es 22)
             match = re.search(r'\d{20,24}', cola)
             if match:
                 bloque = match.group(0)
                 if len(bloque) != 22:
-                    problemas.append({
-                        "linea": i,
-                        "cuil": _cuil(l),
-                        "cbu_candidato": bloque,
-                        "longitud": len(bloque),
-                        "problema": f"CBU tiene {len(bloque)} dígitos, debe tener exactamente 22"
-                    })
+                    problemas.append({"linea": i, "cuil": _cuil(l), "cbu_candidato": bloque, "longitud": len(bloque), "problema": f"CBU tiene {len(bloque)} dígitos, debe tener exactamente 22"})
             else:
-                # No se encontró ningún bloque largo de dígitos en la cola
-                # Podría ser CBU vacío o formato inesperado
                 if re.search(r'[A-Za-z]', cola):
-                    problemas.append({
-                        "linea": i,
-                        "cuil": _cuil(l),
-                        "cbu_candidato": None,
-                        "problema": "Cola del registro contiene letras donde se espera CBU numérico"
-                    })
+                    problemas.append({"linea": i, "cuil": _cuil(l), "cbu_candidato": None, "problema": "Cola del registro contiene letras donde se espera CBU numérico"})
                 else:
                     sin_cbu_candidato += 1
-
         return {
             "ok": len(problemas) == 0,
             "total_reg04": sum(1 for l in lineas if l.strip() and _tipo(l) == '04'),
             "reg04_con_problema_cbu": len(problemas),
-            "reg04_sin_cbu_candidato_detectable": sin_cbu_candidato,
+            "reg04_sin_cbu_candidato": sin_cbu_candidato,
             "detalle": problemas[:30],
-            "nota": (
-                "Validación heurística: busca el primer bloque de 20-24 dígitos "
-                "en los últimos 50 chars del REG04. "
-                "Los REG04 con pago en efectivo (FormaPago=1) no llevan CBU — "
-                "falsos positivos posibles si el registro de efectivo tiene otro campo largo."
-            ),
-            "diagnostico": (
-                "PROBLEMA CBU: Hay REG04 con CBU de longitud incorrecta. "
-                "Debe ser exactamente 22 dígitos numéricos."
-                if problemas
-                else "Sin problemas de CBU detectados. OK."
-            )
+            "diagnostico": ("PROBLEMA CBU: Hay REG04 con CBU de longitud incorrecta. Debe ser exactamente 22 dígitos." if problemas else "Sin problemas de CBU. OK.")
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 def tool_analizar_conceptos_reg03(ruta: str) -> dict:
-    """
-    Analiza los conceptos ARCA declarados en REG03.
-    Detecta el concepto 560.000 que según Guía N°45 debe reemplazarse por 570.000
-    para docentes No-SIPA (IPS provincial, Actividad 16).
-    También muestra el top-10 de conceptos por frecuencia.
-    """
     try:
         lineas = _leer_lineas(ruta)
         conteo: dict[str, int] = defaultdict(int)
         cuils_por_cod: dict[str, set] = defaultdict(set)
-
         for l in lineas:
             if not l.strip() or _tipo(l) != '03':
                 continue
             if len(l) >= REG03_COD_END:
-                cod  = l[REG03_COD_START:REG03_COD_END].strip()
-                cuil = _cuil(l)
+                cod = l[REG03_COD_START:REG03_COD_END].strip()
+                cuils_por_cod[cod].add(_cuil(l))
                 conteo[cod] += 1
-                cuils_por_cod[cod].add(cuil)
-
-        # Conceptos que deben migrar según Guía 45
-        OBSOLETOS = {
-            '5600000': 'Rango libre No Remunerativos Especiales → REEMPLAZAR por 570.000'
-        }
-        # Conceptos que deberían estar si declaran docentes No-SIPA
+        OBSOLETOS = {'5600000': 'Rango libre No Remunerativos Especiales → REEMPLAZAR por 570.000'}
         GUIA45 = {
-            '5700000': '570.000 — Mensual Remuneración No Contributiva al Régimen Nacional SS',
-            '5700001': '570.001 — SAC No Contributivo',
-            '5700002': '570.002 — SAC Proporcional No Contributivo',
-            '5700003': '570.003 — Vacaciones No Contributivo',
-            '8100015': '810.015 — Descuento sistema previsional no nacional',
-            '8100016': '810.016 — Descuento obra social provincial',
+            '5700000': '570.000 — Mensual Remuneración No Contributiva', '5700001': '570.001 — SAC No Contributivo',
+            '5700002': '570.002 — SAC Proporcional No Contributivo', '5700003': '570.003 — Vacaciones No Contributivo',
+            '8100015': '810.015 — Descuento sistema previsional no nacional', '8100016': '810.016 — Descuento obra social provincial',
         }
-
-        alertas = [
-            {
-                "concepto_arca": cod,
-                "descripcion": desc,
-                "ocurrencias_en_reg03": conteo[cod],
-                "cuils_afectados": len(cuils_por_cod[cod]),
-                "alerta": "Usar concepto 570.000 según Guía N°45 ARCA (dic-2025)"
-            }
-            for cod, desc in OBSOLETOS.items()
-            if cod in conteo
-        ]
-
-        conceptos_guia45_presentes = [cod for cod in GUIA45 if cod in conteo]
-
+        alertas = [{"concepto_arca": cod, "descripcion": desc, "ocurrencias": conteo[cod], "cuils_afectados": len(cuils_por_cod[cod])} for cod, desc in OBSOLETOS.items() if cod in conteo]
         top10 = sorted(conteo.items(), key=lambda x: -x[1])[:10]
-
         return {
             "ok": len(alertas) == 0,
             "total_lineas_reg03": sum(conteo.values()),
             "conceptos_distintos": len(conteo),
-            "top10_conceptos": [
-                {
-                    "codigo_arca": cod,
-                    "ocurrencias": cnt,
-                    "cuils_distintos": len(cuils_por_cod[cod]),
-                    "descripcion_guia45": GUIA45.get(cod, OBSOLETOS.get(cod, "—"))
-                }
-                for cod, cnt in top10
-            ],
+            "top10_conceptos": [{"codigo_arca": cod, "ocurrencias": cnt, "cuils_distintos": len(cuils_por_cod[cod])} for cod, cnt in top10],
             "alertas_guia45": alertas,
-            "conceptos_guia45_ya_presentes": conceptos_guia45_presentes,
-            "conceptos_guia45_faltantes": [
-                {"codigo": cod, "descripcion": desc}
-                for cod, desc in GUIA45.items()
-                if cod not in conteo
-            ],
-            "diagnostico": (
-                f"ALERTA GUÍA 45: Concepto 560.000 detectado en "
-                f"{alertas[0]['cuils_afectados']} CUILs. "
-                "Según Guía N°45 ARCA (publicada 29/12/2025), los docentes No-SIPA "
-                "deben declararse con concepto 570.000. No requiere código, solo configuración."
-                if alertas
-                else "Sin conceptos obsoletos Guía 45 detectados. OK."
-            )
+            "conceptos_guia45_presentes": [cod for cod in GUIA45 if cod in conteo],
+            "diagnostico": (f"ALERTA GUÍA 45: Concepto 560.000 en {alertas[0]['cuils_afectados']} CUILs. Usar 570.000 según Guía N°45." if alertas else "Sin conceptos obsoletos Guía 45. OK.")
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 # ---------------------------------------------------------------------------
-# Definición de herramientas para la API de Claude (tool_use)
+# NUEVAS HERRAMIENTAS DE VALIDACIÓN — 7 validadores adicionales
+# Cada uno detecta un error específico de ARCA sin usar IA.
+# Ref. PDFs: Ingreso-liq-La-cantidad-de-registros-04, Ingreso-liq-Long_incorrecta,
+#            Generación-F931_valores_negativos, BugH (rem>10M), Validar-Liq-Cnp-SAC,
+#            Ingreso-liq-La-linea-1-nro-liq, Validar-Liq-Dif_calculo_rem
 # ---------------------------------------------------------------------------
 
-TOOLS = [
-    {
-        "name": "info_archivo",
-        "description": (
-            "Obtiene información básica del archivo LSD: ruta absoluta, tamaño en bytes, "
-            "total de líneas y distribución de registros por tipo (REG01 a REG05). "
-            "Llamar primero para entender el volumen del archivo."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "ruta": {"type": "string", "description": "Ruta al archivo TXT de LSD"}
-            },
-            "required": ["ruta"]
+def tool_validar_conteo_reg04_en_reg01(ruta: str) -> dict:
+    """
+    VAL-01 — Verifica que la cantidad de REG04 declarada en REG01 (pos 30-35)
+    coincida con la cantidad real de líneas tipo 04 en el archivo.
+    Ref: Ingreso-liq-La-cantidad-de-registros-04-informados-en-el-registro-01-X-no-coincide-con-los-encontrados-Y.pdf
+    """
+    try:
+        lineas = _leer_lineas(ruta)
+        reg01 = next((l for l in lineas if l.strip() and _tipo(l) == '01'), None)
+        if not reg01:
+            return {"ok": False, "error": "No se encontró REG01.", "diagnostico": "FALTA REG01."}
+        if len(reg01) < REG01_CANT_REG04_END:
+            return {"ok": False, "error": f"REG01 demasiado corto ({len(reg01)} chars) para leer cantidad REG04.",
+                    "diagnostico": "REG01 incompleto."}
+        raw = reg01[REG01_CANT_REG04_START:REG01_CANT_REG04_END].strip()
+        if not raw.isdigit():
+            return {"ok": False, "error": f"Campo cantidad REG04 en REG01 no numérico: '{raw}'",
+                    "diagnostico": "REG01 mal formado: campo cantidad de REG04 tiene caracteres no numéricos."}
+        cant_declarada = int(raw)
+        cant_real = sum(1 for l in lineas if l.strip() and _tipo(l) == '04')
+        ok = cant_declarada == cant_real
+        return {
+            "ok": ok,
+            "cant_declarada_en_reg01": cant_declarada,
+            "cant_real_reg04":         cant_real,
+            "diferencia":              cant_real - cant_declarada,
+            "diagnostico": (
+                f"ERROR CRÍTICO: REG01 declara {cant_declarada} REG04 pero el archivo tiene {cant_real}. "
+                "ARCA rechaza por este motivo. Regenerar el TXT desde e-SUELDOS."
+                if not ok else f"Conteo REG04 correcto: {cant_real}. OK."
+            )
         }
-    },
-    {
-        "name": "validar_estructura",
-        "description": (
-            "Valida la estructura general del archivo LSD: "
-            "que exista exactamente 1 REG01 (primera línea) y 1 REG05 (última línea), "
-            "que todo CUIL en REG03/REG04 tenga su REG02, "
-            "y que no haya tipos de registro desconocidos."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "ruta": {"type": "string", "description": "Ruta al archivo TXT de LSD"}
-            },
-            "required": ["ruta"]
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def tool_validar_longitud_registros(ruta: str) -> dict:
+    """
+    VAL-02 — Verifica que cada línea tenga la longitud exacta según su tipo.
+    Ref: Ingreso-liq-Long_incorrecta.pdf, Cnp_Long_incorrecta.pdf
+    Longitudes: REG01=35, REG02=115, REG03≥51, REG04≥370, REG05=65
+    """
+    try:
+        lineas = _leer_lineas(ruta)
+        errores = []
+        for i, l in enumerate(lineas, 1):
+            if not l.strip():
+                continue
+            t = _tipo(l)
+            if t not in LONGITUDES_REQUERIDAS:
+                continue
+            lon = len(l)
+            req = LONGITUDES_REQUERIDAS[t]
+            # REG03: el sufijo ".e-s" agrega 4 chars → toleramos hasta req+4
+            if t == '03':
+                if lon < req:
+                    errores.append({"linea": i, "tipo": t, "cuil": _cuil(l),
+                                    "longitud_real": lon, "longitud_requerida": req, "deficit": req - lon})
+                continue
+            # REG04: longitud mínima (el CBU puede extenderlo)
+            if t == '04':
+                if lon < req:
+                    errores.append({"linea": i, "tipo": t, "cuil": _cuil(l),
+                                    "longitud_real": lon, "longitud_requerida": req, "deficit": req - lon})
+                continue
+            # REG01, REG02, REG05: longitud exacta
+            if lon != req:
+                errores.append({"linea": i, "tipo": t,
+                                 "cuil": _cuil(l) if t == '02' else 'N/A',
+                                 "longitud_real": lon, "longitud_requerida": req, "deficit": req - lon})
+        return {
+            "ok": len(errores) == 0,
+            "registros_longitud_incorrecta": len(errores),
+            "detalle": errores[:30],
+            "diagnostico": (
+                f"ERROR: {len(errores)} registros con longitud incorrecta. "
+                "ARCA rechaza cualquier registro que no respete el ancho fijo del layout."
+                if errores else "Todas las longitudes son correctas. OK."
+            )
         }
-    },
-    {
-        "name": "validar_duplicados_reg04",
-        "description": (
-            "Detecta el Bug A: CUILs con más de un registro REG04. "
-            "Ocurre cuando un empleado tiene dos legajos activos simultáneos. "
-            "ARCA suma todos los REG04 del mismo CUIL → bases duplicadas → ratio 2,0x exacto. "
-            "Devuelve el listado de CUILs afectados con número de línea."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "ruta": {"type": "string", "description": "Ruta al archivo TXT de LSD"}
-            },
-            "required": ["ruta"]
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def tool_validar_valores_negativos(ruta: str) -> dict:
+    """
+    VAL-03 — Detecta campos monetarios con valores negativos en REG03 y REG04.
+    El LSD no admite negativos: los descuentos se expresan con flag D/C en REG03.
+    Ref: Generación-F931_valores_negativos.pdf
+    """
+    try:
+        lineas = _leer_lineas(ruta)
+        afectados = []
+        for i, l in enumerate(lineas, 1):
+            if not l.strip():
+                continue
+            t = _tipo(l)
+            if t == '03' and len(l) >= REG03_IMP_END:
+                seg = l[REG03_IMP_START:REG03_IMP_END].strip()
+                if seg.startswith('-'):
+                    afectados.append({"linea": i, "tipo": "REG03", "cuil": _cuil(l),
+                                      "concepto": l[REG03_COD_START:REG03_COD_END].strip(),
+                                      "valor": seg})
+            elif t == '04' and len(l) > 13:
+                parte = l[13:]
+                pos = 0
+                while pos + 15 <= len(parte):
+                    seg = parte[pos:pos+15].strip()
+                    if seg.startswith('-'):
+                        afectados.append({"linea": i, "tipo": "REG04", "cuil": _cuil(l),
+                                          "posicion_absoluta": 13 + pos, "valor": seg})
+                        break
+                    pos += 15
+        return {
+            "ok": len(afectados) == 0,
+            "registros_con_negativo": len(afectados),
+            "detalle": afectados[:30],
+            "diagnostico": (
+                f"ERROR: {len(afectados)} líneas con valores negativos. "
+                "El LSD no admite importes negativos; los descuentos se informan con flag D en el campo Débito/Crédito del REG03."
+                if afectados else "Sin valores negativos. OK."
+            )
         }
-    },
-    {
-        "name": "validar_comas_numericos",
-        "description": (
-            "Detecta el Bug B (interno #30999): comas en campos numéricos de REG03 y REG04. "
-            "El formato correcto para ARCA es 'punto decimal, sin separador de miles' (1000.50). "
-            "Una coma indica que el valor quedó en formato argentino sin normalizar (1.000,50). "
-            "ARCA rechaza estos registros por formato inválido."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "ruta": {"type": "string", "description": "Ruta al archivo TXT de LSD"}
-            },
-            "required": ["ruta"]
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def tool_validar_notacion_cientifica(ruta: str) -> dict:
+    """
+    VAL-06 — Detecta notación científica (ej: 1.0E7) en campos numéricos.
+    Ocurre cuando la Rem. Total supera $10.000.000 (Bug H, corregido jun-2026).
+    Ref: Bug H documentado — BUG-H_Rem_total_notacion_cientifica
+    """
+    try:
+        lineas = _leer_lineas(ruta)
+        afectados = []
+        patron = re.compile(r'\d[eE][+\-]?\d')
+        for i, l in enumerate(lineas, 1):
+            if not l.strip() or _tipo(l) not in ('03', '04'):
+                continue
+            parte = l[13:] if len(l) > 13 else ''
+            if patron.search(parte):
+                afectados.append({"linea": i, "tipo": _tipo(l), "cuil": _cuil(l),
+                                   "extracto": parte[:60]})
+        return {
+            "ok": len(afectados) == 0,
+            "registros_con_notacion_cientifica": len(afectados),
+            "detalle": afectados[:30],
+            "diagnostico": (
+                f"BUG H DETECTADO: {len(afectados)} registros con notación científica. "
+                "Ocurre cuando la Rem. Total supera $10.000.000. ARCA no puede parsear '1.0E7'. "
+                "Solución: actualizar e-SUELDOS (fix commit 9b279e03) y regenerar el TXT."
+                if afectados else "Sin notación científica. OK."
+            )
         }
-    },
-    {
-        "name": "validar_bases_reg04",
-        "description": (
-            "Detecta el Bug C (Guía N°45): REG04 con Base4=0 y Base10 con valor. "
-            "Indica que remuneraciones docentes No-SIPA están declaradas con concepto "
-            "ARCA 560.000 en lugar del 570.000 requerido desde dic-2025. "
-            "Con 560.000: Base4=0, Base10=importe (rechazado por ARCA). "
-            "Con 570.000: Base4=OS/FSR, Base8=contrib, Base10=0 (correcto)."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "ruta": {"type": "string", "description": "Ruta al archivo TXT de LSD"}
-            },
-            "required": ["ruta"]
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def tool_validar_sac_fuera_de_periodo(ruta: str) -> dict:
+    """
+    VAL-07 — Detecta conceptos SAC semestrales (rango 120.000-129.999, excepto 120.003)
+    en meses distintos de junio (06) y diciembre (12).
+    Ref: Validar-Liq-Cnp-SAC.pdf, Validar-Liq-No-corresponde-informar-simultaneamente-SAC-semest.pdf
+    """
+    try:
+        lineas = _leer_lineas(ruta)
+        reg01 = next((l for l in lineas if l.strip() and _tipo(l) == '01'), None)
+        periodo_mes = None
+        periodo_str = None
+        if reg01 and len(reg01) >= REG01_PERIODO_END:
+            periodo_str = reg01[REG01_PERIODO_START:REG01_PERIODO_END]
+            if periodo_str.isdigit():
+                periodo_mes = periodo_str[4:6]
+        if not periodo_mes:
+            return {"ok": True, "advertencia": "No se pudo leer el mes del período desde REG01. Validación omitida."}
+        if periodo_mes in ('06', '12'):
+            return {"ok": True, "periodo": periodo_str, "mes": periodo_mes,
+                    "diagnostico": f"Mes {periodo_mes} es de SAC — conceptos SAC semestrales permitidos."}
+        afectados = []
+        for i, l in enumerate(lineas, 1):
+            if not l.strip() or _tipo(l) != '03' or len(l) < REG03_COD_END:
+                continue
+            cod = l[REG03_COD_START:REG03_COD_END].strip()
+            if not cod.isdigit():
+                continue
+            cod_int = int(cod)
+            # Rango 120.000-129.999 → códigos 1200000-1299999 (×10 pattern del sistema)
+            # Excepto 120.003 (SAC proporcional) → código 1200030, permitido siempre
+            if 1200000 <= cod_int <= 1299999 and cod != '1200030':
+                afectados.append({"linea": i, "cuil": _cuil(l), "concepto": cod,
+                                   "problema": f"SAC semestral en mes {periodo_mes} — solo permitido en mes 06 y 12"})
+        return {
+            "ok": len(afectados) == 0,
+            "periodo": periodo_str,
+            "mes": periodo_mes,
+            "registros_sac_fuera_de_periodo": len(afectados),
+            "detalle": afectados[:30],
+            "diagnostico": (
+                f"ERROR SAC: {len(afectados)} conceptos SAC semestrales en mes {periodo_mes}. "
+                "Los conceptos 120.000-129.999 (excl. 120.003) solo se pueden informar en junio y diciembre. "
+                "Para SAC complementaria en otro mes: usar concepto 120.003 con días correspondientes."
+                if afectados else f"Sin SAC semestral fuera de período (mes {periodo_mes}). OK."
+            )
         }
-    },
-    {
-        "name": "validar_cbu",
-        "description": (
-            "Detecta CBU con formato incorrecto en REG04. "
-            "El CBU debe ser exactamente 22 dígitos numéricos. "
-            "Solo aplica a empleados con forma de pago distinta de efectivo (código 1). "
-            "Usa detección heurística buscando bloques de dígitos al final del registro."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "ruta": {"type": "string", "description": "Ruta al archivo TXT de LSD"}
-            },
-            "required": ["ruta"]
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def tool_validar_periodo_reg01(ruta: str) -> dict:
+    """
+    VAL-09 — Valida que el período declarado en REG01 (pos 16-21) sea un AAAAMM válido.
+    Ref: Ingreso-liq-La-linea-1-nro-liq.pdf, Ingreso-liq-periodo_obligacion.pdf
+    """
+    try:
+        lineas = _leer_lineas(ruta)
+        reg01 = next((l for l in lineas if l.strip() and _tipo(l) == '01'), None)
+        if not reg01:
+            return {"ok": False, "error": "No se encontró REG01.", "diagnostico": "FALTA REG01."}
+        if len(reg01) < REG01_PERIODO_END:
+            return {"ok": False,
+                    "error": f"REG01 demasiado corto ({len(reg01)} chars).",
+                    "diagnostico": "REG01 incompleto: no se puede leer el período."}
+        periodo   = reg01[REG01_PERIODO_START:REG01_PERIODO_END]
+        tipo_envio       = reg01[13:15]   if len(reg01) >= 15  else '??'
+        nro_presentacion = reg01[22:27]   if len(reg01) >= 27  else '?????'
+        cuit_empleador   = reg01[2:13]    if len(reg01) >= 13  else '???????????'
+        errores = []
+        if not periodo.isdigit():
+            errores.append(f"Período '{periodo}' no numérico")
+        else:
+            anio, mes = int(periodo[:4]), int(periodo[4:])
+            if not (1 <= mes <= 12):
+                errores.append(f"Mes '{periodo[4:]}' inválido (debe ser 01-12)")
+            if anio < 2020:
+                errores.append(f"Año '{periodo[:4]}' anterior a 2020 — posible error")
+            if anio > 2030:
+                errores.append(f"Año '{periodo[:4]}' mayor a 2030 — posible error")
+        if tipo_envio not in ('SJ', 'RE'):
+            errores.append(f"Tipo de envío '{tipo_envio}' inválido (debe ser 'SJ' o 'RE')")
+        if not nro_presentacion.isdigit():
+            errores.append(f"N° de presentación '{nro_presentacion}' no numérico")
+        return {
+            "ok": len(errores) == 0,
+            "periodo": periodo,
+            "cuit_empleador": cuit_empleador,
+            "tipo_envio": tipo_envio,
+            "nro_presentacion": nro_presentacion,
+            "errores": errores,
+            "diagnostico": (
+                f"ERROR EN REG01: {'; '.join(errores)}. El archivo será rechazado por ARCA."
+                if errores else
+                f"REG01 válido. Período {periodo}, CUIT {cuit_empleador}, envío '{tipo_envio}', pres. N°{nro_presentacion}."
+            )
         }
-    },
-    {
-        "name": "analizar_conceptos_reg03",
-        "description": (
-            "Analiza los conceptos ARCA declarados en REG03: top-10 por frecuencia, "
-            "detección del concepto obsoleto 560.000 (debe ser 570.000 según Guía 45), "
-            "y lista de conceptos Guía 45 presentes/faltantes "
-            "(570.000/001/002/003, 810.015, 810.016)."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "ruta": {"type": "string", "description": "Ruta al archivo TXT de LSD"}
-            },
-            "required": ["ruta"]
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def tool_validar_rem_bruta_reg04(ruta: str) -> dict:
+    """
+    VAL-05 — Verifica coherencia entre Rem. Bruta (pos 161-175) y Base 1 (pos 176-190) en REG04.
+    Base 1 no puede superar la Rem. Bruta, y si Rem. Bruta = 0 con bases ≠ 0 indica error de exportación.
+    Ref: Validar-Liq-Dif_calculo_rem.pdf, ticket #27571 (Base Imponible > Remuneración Bruta)
+    """
+    try:
+        lineas = _leer_lineas(ruta)
+        afectados = []
+        for i, l in enumerate(lineas, 1):
+            if not l.strip() or _tipo(l) != '04' or len(l) < REG04_BASE1_END:
+                continue
+            try:
+                rem   = float(l[REG04_REM_BRUTA_START:REG04_REM_BRUTA_END].strip() or '0')
+                base1 = float(l[REG04_BASE1_START:REG04_BASE1_END].strip() or '0')
+            except ValueError:
+                continue
+            if rem == 0 and base1 > 0:
+                afectados.append({"linea": i, "cuil": _cuil(l),
+                                   "rem_bruta": l[REG04_REM_BRUTA_START:REG04_REM_BRUTA_END].strip(),
+                                   "base1": l[REG04_BASE1_START:REG04_BASE1_END].strip(),
+                                   "problema": "Rem. Bruta = 0 pero Base 1 SIPA ≠ 0 (error de exportación)"})
+            elif base1 > rem > 0:
+                afectados.append({"linea": i, "cuil": _cuil(l),
+                                   "rem_bruta": l[REG04_REM_BRUTA_START:REG04_REM_BRUTA_END].strip(),
+                                   "base1": l[REG04_BASE1_START:REG04_BASE1_END].strip(),
+                                   "problema": "Base 1 SIPA > Rem. Bruta — la base no puede superar la remuneración"})
+        return {
+            "ok": len(afectados) == 0,
+            "reg04_con_problema_rem_bruta": len(afectados),
+            "detalle": afectados[:30],
+            "diagnostico": (
+                f"ERROR: {len(afectados)} REG04 con Rem. Bruta incoherente respecto a Base 1 SIPA. "
+                "Indica error en la exportación (ticket #27571). Recalcular desde e-SUELDOS."
+                if afectados else "Rem. Bruta y Base 1 coherentes en todos los REG04. OK."
+            )
         }
-    }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+
+# Gemini usa el formato de google.genai.types.FunctionDeclaration
+# ---------------------------------------------------------------------------
+
+from google.genai import types as gtypes
+
+def _tool_def(name: str, description: str) -> gtypes.FunctionDeclaration:
+    """Helper: todas las tools de validación reciben solo 'ruta'."""
+    return gtypes.FunctionDeclaration(
+        name=name,
+        description=description,
+        parameters=gtypes.Schema(
+            type="OBJECT",
+            properties={"ruta": gtypes.Schema(type="STRING", description="Ruta al archivo TXT de LSD")},
+            required=["ruta"],
+        ),
+    )
+
+TOOL_DECLARATIONS = [
+    _tool_def("info_archivo",                    "Obtiene información básica del archivo LSD: tamaño, líneas totales y distribución de registros por tipo (REG01 a REG05). Llamar primero."),
+    _tool_def("validar_estructura",              "Valida la estructura: exactamente 1 REG01 y 1 REG05, que todo CUIL en REG03/REG04 tenga su REG02, y que no haya tipos desconocidos."),
+    _tool_def("validar_periodo_reg01",           "VAL-09: Valida que el período en REG01 (pos 16-21) sea AAAAMM válido, y verifica tipo de envío y N° de presentación."),
+    _tool_def("validar_conteo_reg04_en_reg01",   "VAL-01: Verifica que la cantidad de REG04 declarada en REG01 (pos 30-35) coincida exactamente con los REG04 reales. ARCA rechaza si difieren."),
+    _tool_def("validar_longitud_registros",      "VAL-02: Verifica que cada línea tenga la longitud exacta de su tipo (REG01=35, REG02=115, REG03≥51, REG04≥370, REG05=65). ARCA rechaza longitudes incorrectas."),
+    _tool_def("validar_duplicados_reg04",        "Detecta Bug A: CUILs con más de un REG04 (empleado con dos legajos activos). ARCA suma todos → bases duplicadas (ratio 2,0x)."),
+    _tool_def("validar_comas_numericos",         "Detecta Bug B (#30999): comas en campos numéricos de REG03/REG04. Formato correcto para ARCA es punto decimal sin separador de miles."),
+    _tool_def("validar_valores_negativos",       "VAL-03: Detecta valores negativos en campos monetarios de REG03/REG04. El LSD no admite negativos; los descuentos se expresan con flag D/C."),
+    _tool_def("validar_notacion_cientifica",     "VAL-06: Detecta notación científica (1.0E7) en campos numéricos. Bug H: ocurre cuando Rem. Total > $10.000.000. ARCA no puede parsear ese formato."),
+    _tool_def("validar_bases_reg04",             "Detecta Bug C (Guía N°45): REG04 con Base4=0 y Base10 con valor → concepto 560.000 en lugar de 570.000 para docentes No-SIPA."),
+    _tool_def("validar_rem_bruta_reg04",         "VAL-05: Verifica coherencia entre Rem. Bruta (pos 161-175) y Base 1 SIPA (pos 176-190) en REG04. La base no puede superar la remuneración."),
+    _tool_def("validar_cbu",                     "Detecta CBU con formato incorrecto en REG04. Debe ser exactamente 22 dígitos numéricos."),
+    _tool_def("analizar_conceptos_reg03",        "Analiza conceptos ARCA en REG03: top-10, detección del concepto obsoleto 560.000 (Guía 45), conceptos presentes/faltantes."),
+    _tool_def("validar_sac_fuera_de_periodo",    "VAL-07: Detecta conceptos SAC semestrales (120.000-129.999 excl. 120.003) en meses distintos de junio y diciembre. ARCA los rechaza."),
 ]
 
 TOOL_FUNCTIONS = {
-    "info_archivo":             tool_info_archivo,
-    "validar_estructura":       tool_validar_estructura,
-    "validar_duplicados_reg04": tool_validar_duplicados_reg04,
-    "validar_comas_numericos":  tool_validar_comas_numericos,
-    "validar_bases_reg04":      tool_validar_bases_reg04,
-    "validar_cbu":              tool_validar_cbu,
-    "analizar_conceptos_reg03": tool_analizar_conceptos_reg03,
+    "info_archivo":                  tool_info_archivo,
+    "validar_estructura":            tool_validar_estructura,
+    "validar_periodo_reg01":         tool_validar_periodo_reg01,
+    "validar_conteo_reg04_en_reg01": tool_validar_conteo_reg04_en_reg01,
+    "validar_longitud_registros":    tool_validar_longitud_registros,
+    "validar_duplicados_reg04":      tool_validar_duplicados_reg04,
+    "validar_comas_numericos":       tool_validar_comas_numericos,
+    "validar_valores_negativos":     tool_validar_valores_negativos,
+    "validar_notacion_cientifica":   tool_validar_notacion_cientifica,
+    "validar_bases_reg04":           tool_validar_bases_reg04,
+    "validar_rem_bruta_reg04":       tool_validar_rem_bruta_reg04,
+    "validar_cbu":                   tool_validar_cbu,
+    "analizar_conceptos_reg03":      tool_analizar_conceptos_reg03,
+    "validar_sac_fuera_de_periodo":  tool_validar_sac_fuera_de_periodo,
 }
 
+# Agregar tools de errores ARCA si están disponibles
+# TOOLS_ERRORES viene en formato Anthropic dict → convertir a FunctionDeclaration
+TOOL_DECLARATIONS_ERRORES = []
+for t in TOOLS_ERRORES:
+    props = {}
+    for pname, pdef in t["input_schema"].get("properties", {}).items():
+        props[pname] = gtypes.Schema(type="STRING", description=pdef.get("description", ""))
+    TOOL_DECLARATIONS_ERRORES.append(gtypes.FunctionDeclaration(
+        name=t["name"],
+        description=t["description"],
+        parameters=gtypes.Schema(
+            type="OBJECT",
+            properties=props,
+            required=t["input_schema"].get("required", []),
+        ),
+    ))
+
+TOOL_DECLARATIONS_ALL = TOOL_DECLARATIONS + TOOL_DECLARATIONS_ERRORES
+TOOL_FUNCTIONS_ALL     = {**TOOL_FUNCTIONS, **TOOL_FUNCTIONS_ERRORES}
+
+PRECHECKS = [
+    # Bloque 1 — Estructura básica (sin leer campos internos)
+    "info_archivo",
+    "validar_periodo_reg01",
+    "validar_estructura",
+    "validar_conteo_reg04_en_reg01",
+    "validar_longitud_registros",
+    # Bloque 2 — Errores de formato en campos numéricos
+    "validar_comas_numericos",
+    "validar_valores_negativos",
+    "validar_notacion_cientifica",
+    # Bloque 3 — Validaciones de negocio
+    "validar_duplicados_reg04",
+    "validar_bases_reg04",
+    "validar_rem_bruta_reg04",
+    "validar_cbu",
+    "analizar_conceptos_reg03",
+    "validar_sac_fuera_de_periodo",
+]
+
+
 # ---------------------------------------------------------------------------
-# System prompt: persona y conocimiento del agente
+# System prompt (idéntico al original)
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """Eres un experto en el módulo "LSD Nuevo" (Libro Sueldo Digital v2) del sistema e-SUELDOS
@@ -1158,64 +1241,130 @@ BUG MULTI-TIPO-LIQUIDACIÓN (documentado en LSD NUEVO.docx):
   se eliminó filtrarPorFecha() que restringía a solo un tipo.
 
 ═══════════════════════════════════════════════════════════════
+CONOCIMIENTO: ARCHIVO DE ERRORES DE VALIDACIÓN ARCA
+═══════════════════════════════════════════════════════════════
+Cuando el usuario sube TAMBIÉN el archivo de errores ARCA (el CSV que devuelve ARCA
+después de rechazar una presentación), podés hacer un diagnóstico mucho más preciso.
+
+El archivo de errores tiene este formato CSV:
+  Cuil/Dato de referencia; Descripción
+  CUIL: 20318798355; La base imponible 9 informada a nivel de nomina (650.305,28) \
+        difiere de la determinada (644.400,35) a partir de las liquidaciones ingresadas.
+
+El error más frecuente es "base imponible N informada ≠ determinada":
+  - Base 1, 2, 3: diferencias en SIPA/FNE → revisar conceptos remunerativos
+  - Base 4, 5: diferencias en OS/INSSJP → revisar tope MOPRE o concepto OS
+  - Base 9 (Rem. neta de detracción, Ley 27.430): diferencia en la detracción aplicada
+    → el error más sensible, relacionado con los bugs D, G, K del sistema
+
+CUANDO HAY ARCHIVO DE ERRORES ARCA:
+  1. Llamá primero parsear_errores_arca para entender el volumen y los tipos.
+  2. Si también hay LSD disponible, llamá cruzar_errores_con_lsd para diagnosticar
+     la causa raíz de cada error cruzando REG03 (conceptos) y REG04 (bases informadas).
+  3. Explicá al consultor: qué empleado, qué base, cuánto difiere, y por qué.
+  4. Indicá si la corrección requiere recalcular desde e-SUELDOS o si se puede
+     corregir directamente en el TXT.
+
+═══════════════════════════════════════════════════════════════
 INSTRUCCIONES DE ANÁLISIS
 ═══════════════════════════════════════════════════════════════
 1. Llamá info_archivo primero para entender el volumen.
-2. Ejecutá TODAS las validaciones antes de redactar el informe.
-3. El informe final debe estar en español, con secciones claras y numeradas.
-4. Clasificá cada problema como CRÍTICO (ARCA rechazará) o ADVERTENCIA (revisar).
-5. Para cada problema: indicá causa, cantidad de CUILs afectados, y solución concreta.
-6. Al final: veredicto claro "PRESENTABLE" o "SERÁ RECHAZADO" con fundamentación.
-7. Si el archivo está limpio en todos los checks, indicalo explícitamente como una buena noticia.
-8. Si te preguntan sobre la lógica interna del sistema (sin archivo TXT), respondé
+2. Si hay archivo de errores ARCA: llamá parsear_errores_arca + cruzar_errores_con_lsd.
+3. Ejecutá TODAS las validaciones de estructura antes de redactar el informe.
+4. El informe final debe estar en español, con secciones claras y numeradas.
+5. Clasificá cada problema como CRÍTICO (ARCA rechazará) o ADVERTENCIA (revisar).
+6. Para cada problema: indicá causa, cantidad de CUILs afectados, y solución concreta.
+7. Al final: veredicto claro "PRESENTABLE" o "SERÁ RECHAZADO" con fundamentación.
+8. Si el archivo está limpio en todos los checks, indicalo explícitamente como una buena noticia.
+9. Si te preguntan sobre la lógica interna del sistema (sin archivo TXT), respondé
    usando el conocimiento de arquitectura y cálculo documentado arriba.
 """
 
 # ---------------------------------------------------------------------------
-# Loop agentic principal
+# Loop agentic con Gemini
 # ---------------------------------------------------------------------------
 
 def ejecutar_agente(ruta: str) -> None:
-    """Orquesta el agente Claude con las herramientas de validación LSD."""
+    """Orquesta el agente Gemini con function calling y PDFs de normativa."""
+    from google import genai
 
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        print()
-        print("ERROR: Variable de entorno ANTHROPIC_API_KEY no configurada.")
-        print()
-        print("  Windows CMD:        set ANTHROPIC_API_KEY=sk-ant-...")
-        print("  Windows PowerShell: $env:ANTHROPIC_API_KEY='sk-ant-...'")
-        print("  Linux/Mac:          export ANTHROPIC_API_KEY=sk-ant-...")
-        print()
+        print("\nERROR: Variable de entorno GEMINI_API_KEY no configurada.")
+        print("  Obtené tu key en: https://aistudio.google.com/apikey")
         sys.exit(1)
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
-    messages = [
-        {
-            "role": "user",
-            "content": (
-                f"Analizá el siguiente archivo LSD y producí un informe completo de validación.\n\n"
-                f"Archivo: {os.path.abspath(ruta)}\n\n"
-                "Usá todas las herramientas disponibles. "
-                "El informe debe incluir:\n"
-                "  1. Resumen ejecutivo (3-5 líneas)\n"
-                "  2. Problemas encontrados ordenados por severidad (CRÍTICO primero)\n"
-                "  3. Para cada problema: causa, CUILs afectados (con ejemplos), solución\n"
-                "  4. Veredicto final: ¿ARCA aceptará o rechazará este archivo?"
-            )
-        }
-    ]
+    # Ejecutar validaciones obligatorias antes del razonamiento del modelo
+    resultados_prechecks = {}
+    for tool_name in PRECHECKS:
+        try:
+            resultados_prechecks[tool_name] = TOOL_FUNCTIONS_ALL[tool_name](ruta)
+        except Exception as e:
+            resultados_prechecks[tool_name] = {"ok": False, "error": str(e)}
+
+
+    # Cargar PDFs de normativa (si existen)
+    pdf_refs = cargar_refs()
+    pdf_parts = []
+    if pdf_refs:
+        print(f"  📚 Cargando {len(pdf_refs)} PDFs de normativa...")
+        for ref in pdf_refs:
+            try:
+                pdf_parts.append(gtypes.Part.from_uri(
+                    file_uri=ref["uri"],
+                    mime_type="application/pdf"
+                ))
+            except Exception as e:
+                print(f"  ⚠  No se pudo cargar {ref['display_name']}: {e}")
+
+    # Mensaje inicial — incluir los PDFs como partes si existen
+    msg_texto = (
+        f"Analizá el siguiente archivo LSD y producí un informe completo de validación.\n\n"
+        f"Archivo: {os.path.abspath(ruta)}\n\n"
+        "Usá todas las herramientas disponibles. "
+        "El informe debe incluir:\n"
+        "  1. Resumen ejecutivo (3-5 líneas)\n"
+        "  2. Problemas encontrados ordenados por severidad (CRÍTICO primero)\n"
+        "  3. Para cada problema: causa, CUILs afectados (con ejemplos), solución\n"
+        "  4. Veredicto final: ¿ARCA aceptará o rechazará este archivo?"
+    )
+    if pdf_parts:
+        msg_texto += f"\n\nAdjunto {len(pdf_parts)} documentos de normativa LSD para que los uses como referencia."
+
+    msg_texto += (
+        "\n\nRESULTADOS DE VALIDACIONES OBLIGATORIAS:\n"
+        + json.dumps(resultados_prechecks, ensure_ascii=False, indent=2)
+    )
+
+    # Construir contenido inicial: texto + PDFs opcionales
+    contenido_inicial = gtypes.Content(
+        role="user",
+        parts=pdf_parts + [gtypes.Part.from_text(text=msg_texto)]
+    )
+
+    # Config del modelo
+    herramientas = gtypes.Tool(function_declarations=TOOL_DECLARATIONS_ALL)
+    config = gtypes.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT,
+        tools=[herramientas],
+        temperature=0.1,
+    )
 
     print()
     print("=" * 65)
-    print("  AGENTE LSD — Validador ARCA/AFIP")
+    print("  AGENTE LSD — Validador ARCA/AFIP  [Gemini 3.5 Flash]")
     print("=" * 65)
     print(f"  Archivo : {os.path.abspath(ruta)}")
     print(f"  Modelo  : {MODELO}")
+    print(f"  Normativa: {len(pdf_parts)} PDFs adjuntos" if pdf_parts else "  Normativa: solo conocimiento base")
     print()
     print("  Analizando...")
     print()
+
+    # Historial de la conversación (Gemini usa lista de Content)
+    historial: list[gtypes.Content] = [contenido_inicial]
 
     paso = 0
     while True:
@@ -1224,60 +1373,63 @@ def ejecutar_agente(ruta: str) -> None:
             print("\n[AVISO] Límite de 25 iteraciones alcanzado.")
             break
 
-        try:
-            response = client.messages.create(
-                model=MODELO,
-                max_tokens=8192,
-                system=SYSTEM_PROMPT,
-                tools=TOOLS,
-                messages=messages
-            )
-        except anthropic.APIStatusError as e:
-            if e.status_code == 404 and 'model' in str(e).lower():
-                print(f"\nERROR: Modelo '{MODELO}' no disponible.")
-                print("Editá la variable MODELO al inicio del script.")
-                print("Opciones comunes: claude-3-5-sonnet-20241022 | claude-3-opus-20240229")
-                sys.exit(1)
-            raise
+        response = client.models.generate_content(
+            model=MODELO,
+            contents=historial,
+            config=config,
+        )
 
         # Agregar respuesta al historial
-        messages.append({"role": "assistant", "content": response.content})
+        historial.append(response.candidates[0].content)
 
-        # ¿El agente terminó?
-        if response.stop_reason == "end_turn":
-            for block in response.content:
-                if hasattr(block, 'text'):
-                    print(block.text)
+        # ¿Terminó?
+        if response.candidates[0].finish_reason.name in ("STOP", "MAX_TOKENS"):
+            # Imprimir el texto final
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, "text") and part.text:
+                    print(part.text)
             break
 
-        # Procesar tool_use
-        tool_uses = [b for b in response.content if b.type == "tool_use"]
-        if not tool_uses:
+        # Procesar function calls
+        fn_calls = [
+            part.function_call
+            for part in response.candidates[0].content.parts
+            if hasattr(part, "function_call") and part.function_call
+        ]
+
+        if not fn_calls:
+            # Sin tool calls y sin STOP → imprimir texto parcial y salir
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, "text") and part.text:
+                    print(part.text)
             break
 
-        tool_results = []
-        for tu in tool_uses:
-            fn_name  = tu.name
-            fn_input = tu.input
+        # Ejecutar cada function call y construir las respuestas
+        fn_responses = []
+        for fc in fn_calls:
+            fn_name  = fc.name
+            fn_input = dict(fc.args)  # Struct → dict
 
             label = f"{fn_name}({', '.join(f'{k}={v!r}' for k, v in fn_input.items())})"
             print(f"  → {label}")
 
-            if fn_name in TOOL_FUNCTIONS:
+            if fn_name in TOOL_FUNCTIONS_ALL:
                 try:
-                    result = TOOL_FUNCTIONS[fn_name](**fn_input)
+                    result = TOOL_FUNCTIONS_ALL[fn_name](**fn_input)
                 except Exception as exc:
                     result = {"ok": False, "error": f"Excepción en {fn_name}: {exc}"}
             else:
                 result = {"ok": False, "error": f"Herramienta desconocida: {fn_name}"}
 
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tu.id,
-                "content": json.dumps(result, ensure_ascii=False, default=str)
-            })
+            fn_responses.append(
+                gtypes.Part.from_function_response(
+                    name=fn_name,
+                    response=result,
+                )
+            )
 
-        messages.append({"role": "user", "content": tool_results})
+        # Agregar respuestas de las tools al historial
+        historial.append(gtypes.Content(role="user", parts=fn_responses))
 
     print()
     print("=" * 65)
@@ -1295,7 +1447,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     archivo = sys.argv[1]
-
     if not os.path.exists(archivo):
         print(f"\nERROR: Archivo no encontrado: {archivo}")
         sys.exit(1)

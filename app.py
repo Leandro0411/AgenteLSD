@@ -1,187 +1,476 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-app.py — Interfaz web para el Agente LSD
-Flask + Server-Sent Events para streaming en tiempo real
+app.py — Interfaz web Agente LSD v2  [adaptado a Google Gemini 2.5 Flash]
+Flask + SSE + correcciones automáticas con confirmación del usuario
+
+REQUISITOS:
+    pip install flask google-genai
+    Variable de entorno: GEMINI_API_KEY=AIza...
 """
+from dotenv import load_dotenv
+load_dotenv()
 
-import os
-import sys
-import json
-import tempfile
-import threading
-import queue
-import time
+import os, sys, json, tempfile, threading, queue, uuid, time
+from flask import Flask, render_template, request, Response, jsonify, session
 
-# Cargar variables de entorno desde .env si existe
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass  # python-dotenv no instalado; usar variables de entorno del sistema
-
-from flask import Flask, render_template, request, Response, jsonify
-import anthropic
-from collections import defaultdict
-
-# Importar todo del agente original
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(__file__))
 from agente_lsd import (
-    TOOLS, TOOL_FUNCTIONS, SYSTEM_PROMPT, MODELO,
-    tool_info_archivo, tool_validar_estructura,
-    tool_validar_duplicados_reg04, tool_validar_comas_numericos,
-    tool_validar_bases_reg04, tool_validar_cbu,
-    tool_analizar_conceptos_reg03
+    TOOL_DECLARATIONS, TOOL_FUNCTIONS,
+    TOOL_DECLARATIONS_ALL, TOOL_FUNCTIONS_ALL,
+    SYSTEM_PROMPT, MODELO,
 )
+from correcciones import (
+    TOOLS_CORRECCION, TOOL_FUNCTIONS_CORRECCION
+)
+try:
+    from knowledge_loader import cargar_refs
+except ImportError:
+    def cargar_refs(): return []
+
+from google import genai
+from google.genai import types as gtypes
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
+app.secret_key = os.urandom(24)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-# Labels amigables para cada herramienta
+# Sesiones en memoria: session_id → {ruta_tmp, ruta_errores, messages, estado}
+SESIONES: dict[str, dict] = {}
+
 TOOL_LABELS = {
-    "info_archivo":             "Leyendo el archivo...",
-    "validar_estructura":       "Verificando estructura del archivo...",
-    "validar_duplicados_reg04": "Buscando empleados con legajos duplicados...",
-    "validar_comas_numericos":  "Revisando formato de números...",
-    "validar_bases_reg04":      "Verificando bases imponibles...",
-    "validar_cbu":              "Controlando CBUs...",
-    "analizar_conceptos_reg03": "Analizando conceptos declarados...",
+    # Validaciones existentes
+    "info_archivo":               "Leyendo el archivo...",
+    "validar_estructura":         "Verificando estructura del archivo...",
+    "validar_duplicados_reg04":   "Buscando empleados con legajos duplicados...",
+    "validar_comas_numericos":    "Revisando formato de números...",
+    "validar_bases_reg04":        "Verificando bases imponibles (Bug C / Guía 45)...",
+    "validar_cbu":                "Controlando CBUs...",
+    "analizar_conceptos_reg03":   "Analizando conceptos declarados...",
+    # 7 nuevas validaciones
+    "validar_periodo_reg01":          "Verificando período y cabecera REG01...",
+    "validar_conteo_reg04_en_reg01":  "Controlando conteo de empleados declarado...",
+    "validar_longitud_registros":     "Verificando longitud de cada registro...",
+    "validar_valores_negativos":      "Buscando valores negativos en campos monetarios...",
+    "validar_notacion_cientifica":    "Verificando campos numéricos (notación científica)...",
+    "validar_rem_bruta_reg04":        "Controlando coherencia Rem. Bruta / Base SIPA...",
+    "validar_sac_fuera_de_periodo":   "Verificando conceptos SAC en el período...",
+    # Correcciones
+    "corregir_duplicados_reg04":  "Consolidando registros duplicados...",
+    "corregir_comas_numericos":   "Normalizando formato de números...",
+    "corregir_concepto_560_a_570":"Actualizando concepto 560k → 570k...",
+    "parsear_errores_arca":       "Leyendo errores de ARCA...",
+    "cruzar_errores_con_lsd":     "Cruzando errores ARCA con el libro digital...",
 }
 
-SYSTEM_PROMPT_WEB = SYSTEM_PROMPT + """
+# ── System prompts ─────────────────────────────────────────────────────────────
+
+SYSTEM_PROMPT_ANALISIS = SYSTEM_PROMPT + """
 
 ═══════════════════════════════════════════════════════════════
-INSTRUCCIONES DE FORMATO PARA INTERFAZ WEB
+MODO INTERFAZ WEB — ANÁLISIS INICIAL
 ═══════════════════════════════════════════════════════════════
-El informe final debe estar en formato JSON estricto, sin texto fuera del JSON.
-Estructura exacta:
+Respondé ÚNICAMENTE con un JSON válido, sin texto fuera del JSON, sin markdown.
 
+IMPORTANTE — PRECHECKS YA EJECUTADOS:
+Antes de que leas este mensaje, se ejecutaron automáticamente 14 validaciones
+hardcoded sobre el archivo. Los resultados te llegan como salidas de herramientas.
+TU ROL ES:
+  1. Interpretar y explicar en lenguaje simple los resultados de esos prechecks.
+  2. Detectar errores de NEGOCIO que el código no puede verificar:
+     - Bases imponibles inconsistentes con la normativa MOPRE vigente
+     - Detracción (Base 9 / Base 10) mal calculada
+     - Diferencias en cruce con el archivo de errores ARCA (si se subió)
+     - Cualquier otro problema semántico que requiera leer el contenido
+  3. NO repitas análisis que los prechecks ya hicieron (duplicados, longitudes,
+     comas, conteos, CBU, SAC fuera de período, etc.).
+  4. Si un precheck encontró un error, incorporalo en "problemas" con su tutorial.
+  5. Si todos los prechecks reportaron "ok: true", enfocate en los errores de negocio.
+
+REGLAS DE LENGUAJE — MUY IMPORTANTE:
+- Hablá como si le explicaras a un administrativo que nunca vio código.
+- NO uses términos técnicos: nada de "REG04", "Base4", "CUIL_START", "topeMopreConver".
+- SÍ podés decir: "empleado", "legajo", "CUIL", "número de CBU", "monto", "ARCA".
+- Para cada problema: explicá QUÉ pasó, POR QUÉ pasó, y QUÉ hay que hacer, en ese orden.
+
+═══════════════════════════════════════════════════════════════
+REGLA CRÍTICA DE AGRUPACIÓN — OBLIGATORIA
+═══════════════════════════════════════════════════════════════
+NUNCA generes un problema separado por cada empleado.
+Si 10 empleados tienen "Diferencia en Base 9", generás UN SOLO problema con:
+  - todos los CUILs afectados en "todos_los_cuils_afectados"
+  - cuils_afectados = 10
+  - el detalle de diferencias de cada uno en "diferencias_por_cuil"
+
+La lista "problemas" debe tener COMO MÁXIMO un elemento por tipo de error.
+Tipos de error distintos = problemas distintos.
+Múltiples empleados con el mismo error = UN solo problema.
+
+═══════════════════════════════════════════════════════════════
+TUTORIAL — OBLIGATORIO para cada problema
+═══════════════════════════════════════════════════════════════
+Para cada problema, generá un campo "tutorial_pasos" con los pasos detallados
+para resolver el error en e-Sueldos. Basate en los PDFs de normativa cargados.
+Cada paso debe ser concreto, accionable y en lenguaje simple.
+
+Estructura exacta del JSON:
 {
-  "resumen": "2-3 oraciones en lenguaje simple explicando el estado general del archivo",
+  "resumen": "2-3 oraciones en lenguaje simple sobre el estado del archivo",
   "veredicto": "PRESENTABLE" | "SERÁ RECHAZADO" | "REVISAR",
-  "veredicto_razon": "Una oración explicando el veredicto",
+  "veredicto_razon": "Una oración simple explicando el veredicto",
   "estadisticas": {
     "total_empleados": N,
     "total_conceptos": N,
     "errores_criticos": N,
     "advertencias": N
   },
+  "errores_arca": {
+    "presente": true | false,
+    "total": N,
+    "resumen": "Resumen en lenguaje simple de los errores ARCA (si hay archivo de errores)"
+  },
   "problemas": [
     {
+      "id": "base9_detraccion" | "base1_sipa" | "base4_os" | "bug_a" | "bug_b" | "bug_c" | "estructura" | "cbu" | "otro_001" (usar IDs únicos y descriptivos),
       "severidad": "CRITICO" | "ADVERTENCIA" | "INFO",
-      "titulo": "Título corto en lenguaje simple (máximo 8 palabras)",
-      "descripcion": "Qué está pasando, en lenguaje para un administrativo, sin jerga técnica",
+      "titulo": "Título claro en lenguaje simple (máx 8 palabras)",
+      "descripcion": "Qué está pasando, explicado para un administrativo",
       "cuils_afectados": N,
-      "ejemplos_cuil": ["XX-XXXXXXXX-X", ...],
-      "causa": "Por qué ocurre esto (1-2 oraciones simples)",
-      "solucion": "Qué hay que hacer para corregirlo (pasos concretos, sin tecnicismos)"
+      "todos_los_cuils_afectados": ["XX-XXXXXXXX-X", ...],
+      "ejemplos_cuil": ["XX-XXXXXXXX-X"],
+      "causa": "Por qué ocurre este error (1-2 oraciones simples)",
+      "solucion": "Resumen de qué hay que hacer (1-2 oraciones)",
+      "tutorial_pasos": [
+        {
+          "paso": 1,
+          "titulo": "Título corto del paso",
+          "instruccion": "Explicación detallada de qué hacer en este paso, en lenguaje simple. Mencioná dónde ir en e-Sueldos si aplica.",
+          "referencia": "Nombre del PDF o normativa que sustenta este paso (si aplica)"
+        }
+      ],
+      "auto_corregible": true | false,
+      "accion_correccion": "corregir_duplicados_reg04" | "corregir_comas_numericos" | "corregir_concepto_560_a_570" | "aplicar_cambios_propuestos" | null,
+      "advertencia_correccion": "Qué queda pendiente después de la corrección automática, si aplica",
+      "cambios_propuestos": [
+        {
+          "linea": N,
+          "campo_inicio": N,
+          "campo_fin": N,
+          "valor_actual": "valor que hay ahora en esa posición",
+          "valor_nuevo": "valor correcto que debe quedar",
+          "descripcion": "Descripción simple del cambio"
+        }
+      ],
+      "diagnostico_cruce": "Solo si viene del cruce errores ARCA + LSD: explicación de la causa raíz",
+      "diferencias_por_cuil": [
+        {
+          "cuil": "XXXXXXXXXXX",
+          "base": N,
+          "informado": N.NN,
+          "determinado": N.NN,
+          "diferencia": N.NN,
+          "interpretacion": "Explicación simple de por qué difiere este empleado en particular"
+        }
+      ]
     }
   ]
 }
 
-Si no hay problemas, "problemas" debe ser una lista vacía.
-Respondé ÚNICAMENTE con el JSON, sin markdown, sin texto antes ni después.
+REGLAS ADICIONALES:
+- tutorial_pasos: escribí entre 3 y 7 pasos por error. Sé específico. Referenciá los PDFs.
+- todos_los_cuils_afectados: incluí TODOS los CUILs con ese error (no solo ejemplos).
+- cambios_propuestos: si podés determinar línea/posición exacta, completá este campo y marcá auto_corregible=true.
+- campo_inicio y campo_fin son posiciones 0-indexed (Python s[inicio:fin]).
+- Para errores globales usá las acciones especializadas (corregir_duplicados_reg04, etc.).
 """
 
 
-def ejecutar_agente_streaming(ruta: str, q: queue.Queue):
-    """Ejecuta el agente y pone eventos en la queue para SSE."""
 
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
+
+SYSTEM_PROMPT_CORRECCION = SYSTEM_PROMPT + """
+
+═══════════════════════════════════════════════════════════════
+MODO CORRECCIÓN — EL USUARIO YA CONFIRMÓ
+═══════════════════════════════════════════════════════════════
+El usuario confirmó que querés aplicar la corrección.
+Ejecutá la herramienta de corrección correspondiente y luego respondé con JSON:
+
+{
+  "tipo": "resultado_correccion",
+  "exito": true | false,
+  "mensaje_usuario": "Explicación simple de lo que se hizo o por qué falló",
+  "advertencias": ["si hay algo que el usuario debe hacer manualmente"],
+  "archivo_modificado": true | false
+}
+
+Respondé ÚNICAMENTE con el JSON. Sin texto fuera del JSON.
+"""
+
+
+# ── Cliente Gemini ─────────────────────────────────────────────────────────────
+
+def _get_client() -> genai.Client | None:
+    api_key = os.environ.get('GEMINI_API_KEY')
     if not api_key:
-        q.put({"tipo": "error", "mensaje": "API Key no configurada. Creá el archivo .env con ANTHROPIC_API_KEY=sk-ant-..."})
-        q.put(None)
-        return
+        return None
+    return genai.Client(api_key=api_key)
 
+
+def _cargar_pdf_parts() -> list[gtypes.Part]:
+    """Carga los PDFs de normativa subidos previamente con knowledge_loader.py"""
+    refs = cargar_refs()
+    parts = []
+    for ref in refs:
+        try:
+            parts.append(gtypes.Part.from_uri(
+                file_uri=ref["uri"],
+                mime_type="application/pdf"
+            ))
+        except Exception:
+            pass
+    return parts
+
+
+def _extraer_texto_respuesta(response) -> str | None:
+    """Extrae el texto de la respuesta de Gemini."""
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-    except Exception as e:
-        q.put({"tipo": "error", "mensaje": f"Error al conectar con la API: {str(e)}"})
-        q.put(None)
-        return
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, "text") and part.text and part.text.strip():
+                return part.text.strip()
+    except Exception:
+        pass
+    return None
 
-    messages = [
-        {
-            "role": "user",
-            "content": (
-                f"Analizá el siguiente archivo LSD y producí el informe en formato JSON.\n\n"
-                f"Archivo: {os.path.abspath(ruta)}\n\n"
-                "Ejecutá TODAS las herramientas disponibles antes de responder. "
-                "Respondé ÚNICAMENTE con el JSON estructurado indicado en las instrucciones."
-            )
-        }
+
+def _extraer_fn_calls(response) -> list:
+    """Extrae los function calls de la respuesta de Gemini."""
+    try:
+        return [
+            part.function_call
+            for part in response.candidates[0].content.parts
+            if hasattr(part, "function_call") and part.function_call
+        ]
+    except Exception:
+        return []
+
+
+def _es_fin(response) -> bool:
+    """Determina si Gemini terminó de generar."""
+    try:
+        return response.candidates[0].finish_reason.name in ("STOP", "MAX_TOKENS")
+    except Exception:
+        return True
+
+
+# ── Fase 1: Análisis ──────────────────────────────────────────────────────────
+
+def ejecutar_analisis(session_id: str, q: queue.Queue):
+    """Fase 1: análisis completo del archivo con Gemini."""
+    sesion = SESIONES.get(session_id)
+    if not sesion:
+        q.put({"tipo": "error", "mensaje": "Sesión no encontrada."}); q.put(None); return
+
+    client = _get_client()
+    if not client:
+        q.put({"tipo": "error", "mensaje": "GEMINI_API_KEY no configurada."}); q.put(None); return
+
+    ruta          = sesion['ruta']
+    ruta_err      = sesion.get('ruta_errores')
+    tiene_errores = ruta_err is not None
+
+    # PDFs de normativa (opcionales)
+    pdf_parts = _cargar_pdf_parts()
+
+    # Mensaje inicial
+    if tiene_errores:
+        msg_texto = (
+            f"Analizá el archivo LSD y los errores de validación ARCA. "
+            f"Producí el informe en formato JSON.\n\n"
+            f"Archivo LSD: {os.path.abspath(ruta)}\n"
+            f"Archivo de errores ARCA: {os.path.abspath(ruta_err)}\n\n"
+            "Orden sugerido:\n"
+            "  1. info_archivo (LSD)\n"
+            "  2. parsear_errores_arca (errores ARCA)\n"
+            "  3. cruzar_errores_con_lsd (cruce LSD + errores)\n"
+            "  4. validar_estructura, validar_duplicados_reg04, validar_comas_numericos, "
+            "validar_bases_reg04, validar_cbu, analizar_conceptos_reg03\n\n"
+            "Respondé ÚNICAMENTE con el JSON estructurado."
+        )
+    else:
+        msg_texto = (
+            f"Analizá el archivo LSD y producí el informe en formato JSON.\n\n"
+            f"Archivo: {os.path.abspath(ruta)}\n\n"
+            "Ejecutá TODAS las herramientas de validación. "
+            "Respondé ÚNICAMENTE con el JSON estructurado."
+        )
+
+    if pdf_parts:
+        msg_texto += f"\n\nAdjunto {len(pdf_parts)} documentos de normativa LSD para enriquecer el diagnóstico."
+
+    # Herramientas activas según contexto
+    decls_activas = TOOL_DECLARATIONS_ALL if tiene_errores else TOOL_DECLARATIONS
+    fns_activas   = TOOL_FUNCTIONS_ALL    if tiene_errores else TOOL_FUNCTIONS
+
+    config = gtypes.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT_ANALISIS,
+        tools=[gtypes.Tool(function_declarations=decls_activas)],
+        temperature=0.1,
+    )
+
+    # Historial: texto + PDFs opcionales en el primer mensaje
+    historial: list[gtypes.Content] = [
+        gtypes.Content(
+            role="user",
+            parts=pdf_parts + [gtypes.Part.from_text(text=msg_texto)]
+        )
     ]
 
     paso = 0
     while True:
         paso += 1
         if paso > 25:
-            q.put({"tipo": "error", "mensaje": "Se superó el límite de análisis. Intentá de nuevo."})
-            break
+            q.put({"tipo": "error", "mensaje": "Límite de análisis superado."}); break
 
-        try:
-            response = client.messages.create(
-                model=MODELO,
-                max_tokens=8192,
-                system=SYSTEM_PROMPT_WEB,
-                tools=TOOLS,
-                messages=messages
-            )
-        except anthropic.APIStatusError as e:
-            q.put({"tipo": "error", "mensaje": f"Error de API ({e.status_code}): {str(e)}"})
-            break
-        except Exception as e:
-            q.put({"tipo": "error", "mensaje": f"Error inesperado: {str(e)}"})
-            break
+        # Llamar a Gemini con retry para errores transitorios (503, 429, 500)
+        resp = None
+        for intento in range(4):
+            try:
+                resp = client.models.generate_content(
+                    model=MODELO,
+                    contents=historial,
+                    config=config,
+                )
+                break  # éxito
+            except Exception as e:
+                msg = str(e)
+                es_transitorio = any(c in msg for c in ('503', '429', '500', 'UNAVAILABLE', 'overloaded'))
+                if es_transitorio and intento < 3:
+                    espera = 5 * (2 ** intento)  # 5s, 10s, 20s
+                    q.put({"tipo": "aviso", "mensaje": f"Gemini ocupado, reintentando en {espera}s... (intento {intento+2}/4)"})
+                    time.sleep(espera)
+                else:
+                    q.put({"tipo": "error", "mensaje": msg}); q.put(None); return
 
-        messages.append({"role": "assistant", "content": response.content})
 
-        if response.stop_reason == "end_turn":
-            for block in response.content:
-                if hasattr(block, 'text') and block.text.strip():
-                    texto = block.text.strip()
-                    # Limpiar si viene con markdown
-                    if texto.startswith("```"):
-                        texto = texto.split("```")[1]
-                        if texto.startswith("json"):
-                            texto = texto[4:]
-                    try:
-                        informe = json.loads(texto)
-                        q.put({"tipo": "informe", "data": informe})
-                    except json.JSONDecodeError:
-                        q.put({"tipo": "texto_libre", "data": texto})
-            break
+        # Agregar respuesta al historial
+        historial.append(resp.candidates[0].content)
 
-        tool_uses = [b for b in response.content if b.type == "tool_use"]
-        if not tool_uses:
-            break
+        # IMPORTANTE: En Gemini, finish_reason=STOP tanto para tool calls
+        # como para respuestas finales. Hay que chequear fn_calls PRIMERO.
+        fn_calls = _extraer_fn_calls(resp)
 
-        tool_results = []
-        for tu in tool_uses:
-            fn_name = tu.name
-            fn_input = tu.input
-
-            label = TOOL_LABELS.get(fn_name, f"Ejecutando {fn_name}...")
-            q.put({"tipo": "herramienta", "nombre": fn_name, "label": label})
-
-            if fn_name in TOOL_FUNCTIONS:
+        if fn_calls:
+            # El modelo quiere llamar herramientas → procesarlas
+            pass  # continúa al bloque de fn_responses abajo
+        elif _es_fin(resp):
+            # No hay tool calls y el modelo terminó → extraer respuesta final
+            texto = _extraer_texto_respuesta(resp)
+            if texto:
+                # Limpiar posibles markdown fences
+                if texto.startswith("```"):
+                    partes = texto.split("```")
+                    texto = partes[1] if len(partes) > 1 else texto
+                    if texto.startswith("json"):
+                        texto = texto[4:]
                 try:
-                    result = TOOL_FUNCTIONS[fn_name](**fn_input)
-                except Exception as exc:
-                    result = {"ok": False, "error": f"Error en {fn_name}: {exc}"}
+                    informe = json.loads(texto.strip())
+                    sesion['informe'] = informe
+                    sesion['historial_analisis'] = historial
+                    q.put({"tipo": "informe", "data": informe})
+                except json.JSONDecodeError:
+                    q.put({"tipo": "texto_libre", "data": texto})
             else:
-                result = {"ok": False, "error": f"Herramienta desconocida: {fn_name}"}
+                q.put({"tipo": "error", "mensaje": "El modelo no devolvió respuesta. Intentá de nuevo."})
+            break
+        else:
+            # Sin tool calls y sin finish → algo raro, salir
+            break
 
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tu.id,
-                "content": json.dumps(result, ensure_ascii=False, default=str)
-            })
+        if not fn_calls:
+            break
 
-        messages.append({"role": "user", "content": tool_results})
+        fn_responses = []
+        for fc in fn_calls:
+            fn_name  = fc.name
+            fn_input = dict(fc.args)
 
-    q.put(None)  # Señal de fin
+            q.put({"tipo": "herramienta", "nombre": fn_name,
+                   "label": TOOL_LABELS.get(fn_name, fn_name)})
 
+            if fn_name in fns_activas:
+                try:
+                    res = fns_activas[fn_name](**fn_input)
+                except Exception as exc:
+                    res = {"ok": False, "error": str(exc)}
+            else:
+                res = {"ok": False, "error": f"Herramienta desconocida: {fn_name}"}
+
+            fn_responses.append(
+                gtypes.Part.from_function_response(name=fn_name, response=res)
+            )
+
+        historial.append(gtypes.Content(role="user", parts=fn_responses))
+
+    q.put(None)
+
+
+# ── Fase 2: Corrección ────────────────────────────────────────────────────────
+
+def ejecutar_correccion(session_id: str, problema_id: str, accion: str, q: queue.Queue):
+    """Fase 2: aplicar corrección confirmada por el usuario (sin pasar por Gemini)."""
+    sesion = SESIONES.get(session_id)
+    if not sesion:
+        q.put({"tipo": "error", "mensaje": "Sesión no encontrada."}); q.put(None); return
+
+    ruta = sesion['ruta']
+
+    q.put({"tipo": "herramienta", "nombre": accion,
+           "label": TOOL_LABELS.get(accion, "Aplicando corrección...")})
+
+    # Caso especial: correción genérica con cambios propuestos por el agente
+    if accion == "aplicar_cambios_propuestos":
+        from correcciones import tool_aplicar_cambios_propuestos
+        # Recuperar los cambios del informe guardado en sesión
+        informe  = sesion.get('informe') or {}
+        problema = next((p for p in (informe.get('problemas') or [])
+                         if p.get('id') == problema_id), None)
+        cambios  = (problema or {}).get('cambios_propuestos', [])
+        if not cambios:
+            resultado = {"ok": False, "error": "No se encontraron cambios propuestos para este problema."}
+        else:
+            try:
+                resultado = tool_aplicar_cambios_propuestos(ruta=ruta, cambios=cambios)
+            except Exception as e:
+                resultado = {"ok": False, "error": str(e)}
+
+    elif accion in TOOL_FUNCTIONS_CORRECCION and TOOL_FUNCTIONS_CORRECCION[accion] is not None:
+        try:
+            resultado = TOOL_FUNCTIONS_CORRECCION[accion](ruta=ruta)
+        except Exception as e:
+            resultado = {"ok": False, "error": str(e)}
+    else:
+        resultado = {"ok": False, "error": f"Acción desconocida: {accion}"}
+
+    if resultado.get('ok'):
+        q.put({
+            "tipo": "correccion_ok",
+            "problema_id": problema_id,
+            "accion": accion,
+            "mensaje": resultado.get('mensaje', 'Corrección aplicada.'),
+            "advertencia": resultado.get('advertencia', None),
+            "detalle": resultado
+        })
+    else:
+        q.put({
+            "tipo": "correccion_error",
+            "problema_id": problema_id,
+            "mensaje": resultado.get('error', 'Error desconocido al corregir.')
+        })
+
+    q.put(None)
+
+
+# ── Rutas Flask ───────────────────────────────────────────────────────────────
 
 @app.route('/')
 def index():
@@ -191,82 +480,127 @@ def index():
 @app.route('/analizar', methods=['POST'])
 def analizar():
     if 'archivo' not in request.files:
-        return jsonify({"error": "No se recibió ningún archivo"}), 400
-
+        return jsonify({"error": "No se recibió archivo"}), 400
     archivo = request.files['archivo']
-    if archivo.filename == '':
-        return jsonify({"error": "Nombre de archivo vacío"}), 400
-
     if not archivo.filename.lower().endswith('.txt'):
-        return jsonify({"error": "El archivo debe ser un TXT"}), 400
+        return jsonify({"error": "El archivo debe ser .txt"}), 400
 
-    # Guardar temporalmente
-    with tempfile.NamedTemporaryFile(
-        mode='wb', suffix='.txt', delete=False, prefix='lsd_'
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(mode='wb', suffix='.txt', delete=False, prefix='lsd_') as tmp:
         archivo.save(tmp)
         ruta_tmp = tmp.name
 
+    ruta_errores = None
+    if 'archivo_errores' in request.files:
+        f_err = request.files['archivo_errores']
+        if f_err and f_err.filename and f_err.filename.lower().endswith('.txt'):
+            with tempfile.NamedTemporaryFile(
+                mode='wb', suffix='.txt', delete=False, prefix='err_arca_'
+            ) as tmp_err:
+                f_err.save(tmp_err)
+                ruta_errores = tmp_err.name
+
+    session_id = str(uuid.uuid4())
+    SESIONES[session_id] = {
+        'ruta':              ruta_tmp,
+        'ruta_errores':      ruta_errores,
+        'tiene_errores':     ruta_errores is not None,
+        'informe':           None,
+        'historial_analisis': []
+    }
+
     def generar():
         q = queue.Queue()
-        hilo = threading.Thread(
-            target=ejecutar_agente_streaming,
-            args=(ruta_tmp, q),
-            daemon=True
-        )
-        hilo.start()
-
-        try:
-            while True:
-                try:
-                    evento = q.get(timeout=120)
-                except queue.Empty:
-                    yield f"data: {json.dumps({'tipo': 'error', 'mensaje': 'Tiempo de espera agotado'})}\n\n"
-                    break
-
-                if evento is None:
-                    yield f"data: {json.dumps({'tipo': 'fin'})}\n\n"
-                    break
-
-                yield f"data: {json.dumps(evento, ensure_ascii=False)}\n\n"
-        finally:
+        t = threading.Thread(target=ejecutar_analisis, args=(session_id, q), daemon=True)
+        t.start()
+        yield f"data: {json.dumps({'tipo': 'session', 'session_id': session_id, 'tiene_errores': ruta_errores is not None})}\n\n"
+        while True:
             try:
-                os.unlink(ruta_tmp)
-            except Exception:
-                pass
+                ev = q.get(timeout=120)
+            except queue.Empty:
+                yield f"data: {json.dumps({'tipo': 'error', 'mensaje': 'Tiempo agotado'})}\n\n"; break
+            if ev is None:
+                yield f"data: {json.dumps({'tipo': 'fin'})}\n\n"; break
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
 
     return Response(generar(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
+@app.route('/corregir', methods=['POST'])
+def corregir():
+    data = request.get_json()
+    session_id  = data.get('session_id')
+    problema_id = data.get('problema_id')
+    accion      = data.get('accion')
+
+    if not all([session_id, problema_id, accion]):
+        return jsonify({"error": "Faltan parámetros"}), 400
+    if session_id not in SESIONES:
+        return jsonify({"error": "Sesión vencida. Subí el archivo de nuevo."}), 404
+    acciones_validas = set(TOOL_FUNCTIONS_CORRECCION.keys()) | {"aplicar_cambios_propuestos"}
+    if accion not in acciones_validas:
+        return jsonify({"error": f"Acción no permitida: {accion}"}), 400
+
+    def generar():
+        q = queue.Queue()
+        t = threading.Thread(
+            target=ejecutar_correccion,
+            args=(session_id, problema_id, accion, q), daemon=True
+        )
+        t.start()
+        while True:
+            try:
+                ev = q.get(timeout=60)
+            except queue.Empty:
+                yield f"data: {json.dumps({'tipo': 'error', 'mensaje': 'Tiempo agotado'})}\n\n"; break
+            if ev is None:
+                yield f"data: {json.dumps({'tipo': 'fin'})}\n\n"; break
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+    return Response(generar(), mimetype='text/event-stream',
+                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+
+@app.route('/descargar/<session_id>')
+def descargar(session_id):
+    from flask import send_file
+    sesion = SESIONES.get(session_id)
+    if not sesion:
+        return "Sesión vencida", 404
+    ruta = sesion['ruta']
+    if not os.path.exists(ruta):
+        return "Archivo no encontrado", 404
+    return send_file(ruta, as_attachment=True,
+                     download_name='LSD_corregido.txt',
+                     mimetype='text/plain')
+
+
 @app.route('/health')
 def health():
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    api_key = os.environ.get('GEMINI_API_KEY')
+    pdf_refs = cargar_refs()
     return jsonify({
         "ok": True,
         "api_configurada": bool(api_key),
-        "modelo": MODELO
+        "modelo": MODELO,
+        "pdfs_normativa": len(pdf_refs),
     })
 
 
 if __name__ == '__main__':
-    print()
-    print("=" * 55)
-    print("  AGENTE LSD — Interfaz Web")
-    print("=" * 55)
-
-    if not os.environ.get('ANTHROPIC_API_KEY'):
-        print()
-        print("  ⚠  ANTHROPIC_API_KEY no está configurada.")
-        print("     Creá el archivo .env en esta carpeta con:")
-        print("     ANTHROPIC_API_KEY=sk-ant-...")
-        print()
+    print("\n" + "="*55)
+    print(f"  AGENTE LSD — Interfaz Web v2  [{MODELO}]")
+    print("="*55)
+    if not os.environ.get('GEMINI_API_KEY'):
+        print("\n  ⚠  GEMINI_API_KEY no configurada.")
+        print("     Obtené tu key en: https://aistudio.google.com/apikey")
+        print("     Windows: setx GEMINI_API_KEY \"AIza...\"")
+        print("     Linux/Mac: export GEMINI_API_KEY=AIza...")
+    pdf_refs = cargar_refs()
+    if pdf_refs:
+        print(f"\n  📚 {len(pdf_refs)} PDFs de normativa cargados.")
     else:
-        print()
-        print("  ✓  API Key cargada correctamente.")
-        print()
-
-    print("  Abrí tu navegador en:  http://localhost:5000")
-    print("=" * 55)
-    print()
+        print("\n  ℹ  Sin PDFs de normativa. Para agregar: python knowledge_loader.py")
+    print("\n  Abrí tu navegador en:  http://localhost:5000")
+    print("="*55 + "\n")
     app.run(debug=False, host='0.0.0.0', port=5000, threaded=True)
