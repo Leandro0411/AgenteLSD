@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 app.py — Interfaz web Agente LSD v2  [adaptado a Google Gemini 2.5 Flash]
-Flask + SSE + correcciones automáticas con confirmación del usuario
+Flask + SSE — Solo diagnóstico y guía de pasos. La corrección la realiza el agente general externo.
 
 REQUISITOS:
     pip install flask google-genai
@@ -20,9 +20,7 @@ from agente_lsd import (
     TOOL_DECLARATIONS_ALL, TOOL_FUNCTIONS_ALL,
     SYSTEM_PROMPT, MODELO,
 )
-from correcciones import (
-    TOOLS_CORRECCION, TOOL_FUNCTIONS_CORRECCION
-)
+# correcciones.py desactivado — la corrección la realiza el agente general externo
 try:
     from knowledge_loader import cargar_refs
 except ImportError:
@@ -39,15 +37,13 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 SESIONES: dict[str, dict] = {}
 
 TOOL_LABELS = {
-    # Validaciones existentes
-    "info_archivo":               "Leyendo el archivo...",
-    "validar_estructura":         "Verificando estructura del archivo...",
-    "validar_duplicados_reg04":   "Buscando empleados con legajos duplicados...",
-    "validar_comas_numericos":    "Revisando formato de números...",
-    "validar_bases_reg04":        "Verificando bases imponibles (Bug C / Guía 45)...",
-    "validar_cbu":                "Controlando CBUs...",
-    "analizar_conceptos_reg03":   "Analizando conceptos declarados...",
-    # 7 nuevas validaciones
+    "info_archivo":                   "Leyendo el archivo...",
+    "validar_estructura":             "Verificando estructura del archivo...",
+    "validar_duplicados_reg04":       "Buscando empleados con legajos duplicados...",
+    "validar_comas_numericos":        "Revisando formato de números...",
+    "validar_bases_reg04":            "Verificando bases imponibles (Bug C / Guía 45)...",
+    "validar_cbu":                    "Controlando CBUs...",
+    "analizar_conceptos_reg03":       "Analizando conceptos declarados...",
     "validar_periodo_reg01":          "Verificando período y cabecera REG01...",
     "validar_conteo_reg04_en_reg01":  "Controlando conteo de empleados declarado...",
     "validar_longitud_registros":     "Verificando longitud de cada registro...",
@@ -55,12 +51,8 @@ TOOL_LABELS = {
     "validar_notacion_cientifica":    "Verificando campos numéricos (notación científica)...",
     "validar_rem_bruta_reg04":        "Controlando coherencia Rem. Bruta / Base SIPA...",
     "validar_sac_fuera_de_periodo":   "Verificando conceptos SAC en el período...",
-    # Correcciones
-    "corregir_duplicados_reg04":  "Consolidando registros duplicados...",
-    "corregir_comas_numericos":   "Normalizando formato de números...",
-    "corregir_concepto_560_a_570":"Actualizando concepto 560k → 570k...",
-    "parsear_errores_arca":       "Leyendo errores de ARCA...",
-    "cruzar_errores_con_lsd":     "Cruzando errores ARCA con el libro digital...",
+    "parsear_errores_arca":           "Leyendo errores de ARCA...",
+    "cruzar_errores_con_lsd":         "Cruzando errores ARCA con el libro digital...",
 }
 
 # ── System prompts ─────────────────────────────────────────────────────────────
@@ -107,13 +99,31 @@ Tipos de error distintos = problemas distintos.
 Múltiples empleados con el mismo error = UN solo problema.
 
 ═══════════════════════════════════════════════════════════════
-TUTORIAL — OBLIGATORIO para cada problema
+INSTRUCCIONES PARA tutorial_pasos — MUY IMPORTANTE
 ═══════════════════════════════════════════════════════════════
-Para cada problema, generá un campo "tutorial_pasos" con los pasos detallados
-para resolver el error en e-Sueldos. Basate en los PDFs de normativa cargados.
-Cada paso debe ser concreto, accionable y en lenguaje simple.
+Para CADA problema generá un campo "tutorial_pasos" con los pasos EXACTOS y
+DETALLADOS para resolver el error en e-SUELDOS.
 
-Estructura exacta del JSON:
+REGLAS PARA LOS PASOS:
+- Mínimo 4 pasos, máximo 8. Nunca menos de 4.
+- Cada paso describe UNA ACCIÓN CONCRETA. Si requiere más de una acción, dividí en dos pasos.
+- Menciona el menú, botón o pantalla exacta de e-SUELDOS donde el consultor tiene que ir.
+- Si el error requiere recalcular en e-SUELDOS, decilo explícitamente en qué pantalla y con qué botón.
+- Si hay un concepto ARCA que hay que crear o modificar, detallá los campos a completar.
+- Si aplica, indicá cómo VERIFICAR que el paso funcionó (qué tiene que ver el consultor en pantalla).
+- Basate SIEMPRE en los PDFs de normativa adjuntos, en especial "Libro Sueldo Digital - Errores Frecuentes LSD".
+- Si el error está documentado en ese PDF, citá el nombre del instructivo en el campo "referencia".
+- El último paso debe ser siempre: "Volvé a exportar el LSD y validalo de nuevo con el Agente".
+
+Ejemplo de paso bien redactado:
+{
+  "paso": 2,
+  "titulo": "Acceder al módulo de conceptos",
+  "instruccion": "En e-SUELDOS, andá a Configuración → AFIP → Conceptos ARCA. Buscá el concepto que usás para docentes No-SIPA (probablemente figura como '560.000'). Hacé clic en Editar.",
+  "referencia": "Libro Sueldo Digital - Errores Frecuentes LSD — sección Concepto 570.000"
+}
+
+Estructura exacta del JSON de respuesta:
 {
   "resumen": "2-3 oraciones en lenguaje simple sobre el estado del archivo",
   "veredicto": "PRESENTABLE" | "SERÁ RECHAZADO" | "REVISAR",
@@ -131,7 +141,7 @@ Estructura exacta del JSON:
   },
   "problemas": [
     {
-      "id": "base9_detraccion" | "base1_sipa" | "base4_os" | "bug_a" | "bug_b" | "bug_c" | "estructura" | "cbu" | "otro_001" (usar IDs únicos y descriptivos),
+      "id": "bug_a" | "bug_b" | "bug_c" | "base9_detraccion" | "base1_sipa" | "base4_os" | "estructura" | "cbu" | "otro_001" (usar IDs únicos y descriptivos),
       "severidad": "CRITICO" | "ADVERTENCIA" | "INFO",
       "titulo": "Título claro en lenguaje simple (máx 8 palabras)",
       "descripcion": "Qué está pasando, explicado para un administrativo",
@@ -143,22 +153,9 @@ Estructura exacta del JSON:
       "tutorial_pasos": [
         {
           "paso": 1,
-          "titulo": "Título corto del paso",
-          "instruccion": "Explicación detallada de qué hacer en este paso, en lenguaje simple. Mencioná dónde ir en e-Sueldos si aplica.",
-          "referencia": "Nombre del PDF o normativa que sustenta este paso (si aplica)"
-        }
-      ],
-      "auto_corregible": true | false,
-      "accion_correccion": "corregir_duplicados_reg04" | "corregir_comas_numericos" | "corregir_concepto_560_a_570" | "aplicar_cambios_propuestos" | null,
-      "advertencia_correccion": "Qué queda pendiente después de la corrección automática, si aplica",
-      "cambios_propuestos": [
-        {
-          "linea": N,
-          "campo_inicio": N,
-          "campo_fin": N,
-          "valor_actual": "valor que hay ahora en esa posición",
-          "valor_nuevo": "valor correcto que debe quedar",
-          "descripcion": "Descripción simple del cambio"
+          "titulo": "Título corto y accionable del paso",
+          "instruccion": "Descripción muy detallada y concreta. Mencioná el menú exacto de e-SUELDOS, el botón a presionar, el campo a completar y qué resultado se espera ver en pantalla.",
+          "referencia": "Nombre exacto del PDF o sección del instructivo que respalda este paso"
         }
       ],
       "diagnostico_cruce": "Solo si viene del cruce errores ARCA + LSD: explicación de la causa raíz",
@@ -177,33 +174,9 @@ Estructura exacta del JSON:
 }
 
 REGLAS ADICIONALES:
-- tutorial_pasos: escribí entre 3 y 7 pasos por error. Sé específico. Referenciá los PDFs.
+- tutorial_pasos: mínimo 4 pasos por problema, máximo 8. El último paso siempre es "Volvé a exportar y validar con el Agente".
 - todos_los_cuils_afectados: incluí TODOS los CUILs con ese error (no solo ejemplos).
-- cambios_propuestos: si podés determinar línea/posición exacta, completá este campo y marcá auto_corregible=true.
-- campo_inicio y campo_fin son posiciones 0-indexed (Python s[inicio:fin]).
-- Para errores globales usá las acciones especializadas (corregir_duplicados_reg04, etc.).
-"""
-
-
-
-
-SYSTEM_PROMPT_CORRECCION = SYSTEM_PROMPT + """
-
-═══════════════════════════════════════════════════════════════
-MODO CORRECCIÓN — EL USUARIO YA CONFIRMÓ
-═══════════════════════════════════════════════════════════════
-El usuario confirmó que querés aplicar la corrección.
-Ejecutá la herramienta de corrección correspondiente y luego respondé con JSON:
-
-{
-  "tipo": "resultado_correccion",
-  "exito": true | false,
-  "mensaje_usuario": "Explicación simple de lo que se hizo o por qué falló",
-  "advertencias": ["si hay algo que el usuario debe hacer manualmente"],
-  "archivo_modificado": true | false
-}
-
-Respondé ÚNICAMENTE con el JSON. Sin texto fuera del JSON.
+- NO incluir campos auto_corregible, accion_correccion, cambios_propuestos ni advertencia_correccion — esos campos fueron removidos.
 """
 
 
@@ -414,60 +387,7 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
     q.put(None)
 
 
-# ── Fase 2: Corrección ────────────────────────────────────────────────────────
-
-def ejecutar_correccion(session_id: str, problema_id: str, accion: str, q: queue.Queue):
-    """Fase 2: aplicar corrección confirmada por el usuario (sin pasar por Gemini)."""
-    sesion = SESIONES.get(session_id)
-    if not sesion:
-        q.put({"tipo": "error", "mensaje": "Sesión no encontrada."}); q.put(None); return
-
-    ruta = sesion['ruta']
-
-    q.put({"tipo": "herramienta", "nombre": accion,
-           "label": TOOL_LABELS.get(accion, "Aplicando corrección...")})
-
-    # Caso especial: correción genérica con cambios propuestos por el agente
-    if accion == "aplicar_cambios_propuestos":
-        from correcciones import tool_aplicar_cambios_propuestos
-        # Recuperar los cambios del informe guardado en sesión
-        informe  = sesion.get('informe') or {}
-        problema = next((p for p in (informe.get('problemas') or [])
-                         if p.get('id') == problema_id), None)
-        cambios  = (problema or {}).get('cambios_propuestos', [])
-        if not cambios:
-            resultado = {"ok": False, "error": "No se encontraron cambios propuestos para este problema."}
-        else:
-            try:
-                resultado = tool_aplicar_cambios_propuestos(ruta=ruta, cambios=cambios)
-            except Exception as e:
-                resultado = {"ok": False, "error": str(e)}
-
-    elif accion in TOOL_FUNCTIONS_CORRECCION and TOOL_FUNCTIONS_CORRECCION[accion] is not None:
-        try:
-            resultado = TOOL_FUNCTIONS_CORRECCION[accion](ruta=ruta)
-        except Exception as e:
-            resultado = {"ok": False, "error": str(e)}
-    else:
-        resultado = {"ok": False, "error": f"Acción desconocida: {accion}"}
-
-    if resultado.get('ok'):
-        q.put({
-            "tipo": "correccion_ok",
-            "problema_id": problema_id,
-            "accion": accion,
-            "mensaje": resultado.get('mensaje', 'Corrección aplicada.'),
-            "advertencia": resultado.get('advertencia', None),
-            "detalle": resultado
-        })
-    else:
-        q.put({
-            "tipo": "correccion_error",
-            "problema_id": problema_id,
-            "mensaje": resultado.get('error', 'Error desconocido al corregir.')
-        })
-
-    q.put(None)
+# ejecutar_correccion() eliminada — la corrección la realiza el agente general externo
 
 
 # ── Rutas Flask ───────────────────────────────────────────────────────────────
@@ -526,53 +446,7 @@ def analizar():
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
-@app.route('/corregir', methods=['POST'])
-def corregir():
-    data = request.get_json()
-    session_id  = data.get('session_id')
-    problema_id = data.get('problema_id')
-    accion      = data.get('accion')
-
-    if not all([session_id, problema_id, accion]):
-        return jsonify({"error": "Faltan parámetros"}), 400
-    if session_id not in SESIONES:
-        return jsonify({"error": "Sesión vencida. Subí el archivo de nuevo."}), 404
-    acciones_validas = set(TOOL_FUNCTIONS_CORRECCION.keys()) | {"aplicar_cambios_propuestos"}
-    if accion not in acciones_validas:
-        return jsonify({"error": f"Acción no permitida: {accion}"}), 400
-
-    def generar():
-        q = queue.Queue()
-        t = threading.Thread(
-            target=ejecutar_correccion,
-            args=(session_id, problema_id, accion, q), daemon=True
-        )
-        t.start()
-        while True:
-            try:
-                ev = q.get(timeout=60)
-            except queue.Empty:
-                yield f"data: {json.dumps({'tipo': 'error', 'mensaje': 'Tiempo agotado'})}\n\n"; break
-            if ev is None:
-                yield f"data: {json.dumps({'tipo': 'fin'})}\n\n"; break
-            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
-
-    return Response(generar(), mimetype='text/event-stream',
-                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
-
-
-@app.route('/descargar/<session_id>')
-def descargar(session_id):
-    from flask import send_file
-    sesion = SESIONES.get(session_id)
-    if not sesion:
-        return "Sesión vencida", 404
-    ruta = sesion['ruta']
-    if not os.path.exists(ruta):
-        return "Archivo no encontrado", 404
-    return send_file(ruta, as_attachment=True,
-                     download_name='LSD_corregido.txt',
-                     mimetype='text/plain')
+# Rutas /corregir y /descargar eliminadas — la corrección la realiza el agente general externo
 
 
 @app.route('/health')

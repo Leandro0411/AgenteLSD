@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# =============================================================================
+# MÓDULO DESACTIVADO — No se importa desde app.py ni agente_lsd.py
+# =============================================================================
+# Este módulo queda en el repo como referencia para el futuro agente corrector
+# general. La corrección automática del TXT fue removida del Agente LSD.
+# El agente ahora solo diagnostica y genera instrucciones paso a paso para que
+# el consultor corrija en e-SUELDOS.
+# =============================================================================
 """
 correcciones.py — Herramientas de corrección automática del TXT LSD
 Cada función recibe la ruta del archivo, aplica la corrección y devuelve

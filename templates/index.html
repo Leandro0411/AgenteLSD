@@ -50,7 +50,7 @@
         <div class="upload-hero">
           <div class="upload-badge">🤖 Agente IA</div>
           <h1>Revisá tu Libro Sueldo Digital antes de presentar</h1>
-          <p>El agente analiza el TXT del LSD, detecta errores que ARCA va a rechazar y puede corregirlos automáticamente.</p>
+          <p>El agente analiza el TXT del LSD, detecta errores que ARCA va a rechazar y genera un instructivo detallado paso a paso para corregirlos en e-SUELDOS.</p>
         </div>
 
         <div id="drop">
@@ -548,62 +548,20 @@
           const pasos = p.tutorial_pasos || [];
           if(pasos.length){
             const pasosH = pasos.map(t=>`
-              <div style="display:flex;gap:12px;margin-bottom:12px;align-items:flex-start;">
-                <div style="min-width:26px;height:26px;border-radius:50%;background:var(--es-blue);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">${t.paso||'?'}</div>
+              <div style="display:flex;gap:12px;margin-bottom:14px;align-items:flex-start;">
+                <div style="min-width:28px;height:28px;border-radius:50%;background:var(--es-blue);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">${t.paso||'?'}</div>
                 <div style="flex:1;">
-                  <div style="font-size:13px;font-weight:600;color:var(--txt-hi);margin-bottom:3px;">${esc(t.titulo||'')}</div>
-                  <div style="font-size:13px;color:var(--txt-mid);line-height:1.6;">${esc(t.instruccion||'')}</div>
-                  ${t.referencia?`<div style="margin-top:5px;font-size:11px;color:var(--es-blue);display:flex;align-items:center;gap:4px;"><span>📄</span> ${esc(t.referencia)}</div>`:''}
+                  <div style="font-size:13px;font-weight:600;color:var(--txt-hi);margin-bottom:4px;">${esc(t.titulo||'')}</div>
+                  <div style="font-size:13px;color:var(--txt-mid);line-height:1.65;">${esc(t.instruccion||'')}</div>
+                  ${t.referencia?`<div style="margin-top:6px;font-size:11px;color:var(--es-blue);display:flex;align-items:center;gap:4px;"><span>📄</span> ${esc(t.referencia)}</div>`:''}
                 </div>
               </div>`).join('');
             tutH = `<div class="dl" style="margin-top:4px;">
               <div class="dl-l">📋 Cómo resolverlo — paso a paso</div>
-              <div style="margin-top:12px;padding:14px 16px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);">
+              <div style="margin-top:12px;padding:16px 18px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);">
                 ${pasosH}
               </div>
             </div>`;
-          }
-
-          // ── Zona de corrección ─────────────────────────────────────
-          let corrZona = '';
-          if(p.auto_corregible && p.accion_correccion && sessionId){
-            const adv = p.advertencia_correccion
-              ? `<div class="adv">⚠️ ${esc(p.advertencia_correccion)}</div>` : '';
-            let prevH = '';
-            if(p.accion_correccion === 'aplicar_cambios_propuestos' && (p.cambios_propuestos||[]).length){
-              const filas = p.cambios_propuestos.slice(0,15).map(c=>`
-                <tr>
-                  <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--txt-lo);">Línea ${c.linea||'?'}</td>
-                  <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-family:monospace;font-size:11px;color:var(--err);">${esc(c.valor_actual||'')}</td>
-                  <td style="padding:4px;border-bottom:1px solid var(--border);color:var(--txt-xlo);">→</td>
-                  <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-family:monospace;font-size:11px;color:var(--ok);">${esc(c.valor_nuevo||'')}</td>
-                  <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--txt-lo);">${esc(c.descripcion||'')}</td>
-                </tr>`).join('');
-              const masH = p.cambios_propuestos.length > 15
-                ? `<tr><td colspan="5" style="padding:6px 10px;font-size:11px;color:var(--txt-lo);text-align:center;">... y ${p.cambios_propuestos.length-15} cambios más</td></tr>` : '';
-              prevH = `<div class="dl" style="margin-top:10px;"><div class="dl-l">🔍 Cambios que se aplicarán</div>
-                <div style="overflow-x:auto;margin-top:6px;border:1px solid var(--border);border-radius:var(--r);">
-                  <table style="width:100%;border-collapse:collapse;background:var(--surface);">
-                    <thead><tr style="background:var(--surface-2);">
-                      <th style="padding:5px 10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--txt-lo);border-bottom:1px solid var(--border);">Línea</th>
-                      <th style="padding:5px 10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--err);border-bottom:1px solid var(--border);">Actual</th>
-                      <th style="padding:4px;border-bottom:1px solid var(--border);"></th>
-                      <th style="padding:5px 10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--ok);border-bottom:1px solid var(--border);">Nuevo</th>
-                      <th style="padding:5px 10px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--txt-lo);border-bottom:1px solid var(--border);">Descripción</th>
-                    </tr></thead>
-                    <tbody>${filas}${masH}</tbody>
-                  </table>
-                </div></div>`;
-            }
-            corrZona = `<div class="corr-zona" id="corr-${esc(p.id)}">
-              <div class="corr-confirm"><div class="ci">🔧</div><div class="ct">
-                <p>El agente puede corregir este error automáticamente.</p>
-                ${prevH}${adv}
-                <div class="corr-btns">
-                  <button class="btn-si" onclick="confirmarCorreccion('${esc(p.id)}','${esc(p.accion_correccion)}',this)">Sí, aplicar corrección</button>
-                  <button class="btn-no" onclick="descartarCorreccion('${esc(p.id)}')">No por ahora</button>
-                </div>
-              </div></div></div>`;
           }
 
           div.innerHTML=`
@@ -620,7 +578,6 @@
               <div class="dl"><div class="dl-l">¿Por qué ocurre?</div><div class="dl-t">${esc(p.causa||'')}</div></div>
               ${tutH}
               <div class="dl"><div class="dl-l">Resumen de solución</div><div class="sol-box">${esc(p.solucion||'')}</div></div>
-              ${corrZona}
             </div>`;
           div.querySelector('.pc-head').addEventListener('click',()=>div.classList.toggle('open'));
           lista.appendChild(div);
@@ -629,54 +586,9 @@
       guardarEnHistorial(_archivoNombreActual, data);
     }
 
-    // ═══════════════════════════════════════════════════════
-    // CORRECCIÓN
-    // ═══════════════════════════════════════════════════════
-
-    function confirmarCorreccion(probId, accion, btn) {
-      btn.disabled=true;
-      const zona=document.getElementById('corr-'+probId);
-      if(!zona) return;
-      zona.innerHTML=`<div class="corr-aplicando"><div class="spinner"></div><span>Aplicando la corrección...</span></div>`;
-      fetch('/corregir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,problema_id:probId,accion})})
-      .then(resp=>{
-        const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf='';
-        function leer(){
-          reader.read().then(({done,value})=>{
-            if(done) return;
-            buf+=dec.decode(value,{stream:true});
-            const partes=buf.split('\n\n'); buf=partes.pop();
-            partes.forEach(p=>{
-              if(p.startsWith('data: ')){
-                try{
-                  const ev=JSON.parse(p.slice(6));
-                  if(ev.tipo==='correccion_ok')    mostrarCorrOk(probId,ev);
-                  if(ev.tipo==='correccion_error') mostrarCorrErr(probId,ev.mensaje);
-                } catch(e){}
-              }
-            });
-            leer();
-          });
-        }
-        leer();
-      })
-      .catch(e=>mostrarCorrErr(probId,'Error de conexión: '+e.message));
-    }
-    function mostrarCorrOk(probId,ev){
-      const zona=document.getElementById('corr-'+probId);
-      if(!zona) return;
-      const advH=ev.advertencia?`<div class="co-adv">⚠️ ${esc(ev.advertencia)}</div>`:'';
-      zona.innerHTML=`<div class="corr-ok"><div class="co-head"><span>✅</span><strong>Corrección aplicada</strong></div><div class="co-msg">${esc(ev.mensaje||'')}</div>${advH}<a href="/descargar/${sessionId}" class="btn-dl" download>⬇ Descargar archivo corregido</a></div>`;
-    }
-    function mostrarCorrErr(probId,msg){
-      const zona=document.getElementById('corr-'+probId);
-      if(!zona) return;
-      zona.innerHTML=`<div class="corr-err"><strong>No se pudo aplicar la corrección</strong>${esc(msg)}</div>`;
-    }
-    function descartarCorreccion(probId){
-      const zona=document.getElementById('corr-'+probId);
-      if(zona) zona.style.display='none';
-    }
+    // ── Funciones de corrección eliminadas ─────────────────────────────────────
+    // confirmarCorreccion, mostrarCorrOk, mostrarCorrErr, descartarCorreccion
+    // fueron eliminadas. La corrección la realiza el agente general externo.
     function mostrarTexto(texto){
       panelProg.style.display='none'; resultado.style.display='block';
       const vw=document.getElementById('veredicto-wrap');
