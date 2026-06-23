@@ -1,300 +1,42 @@
 {
-  "subido_en": "2026-06-16 12:34:24",
-  "total": 49,
+  "subido_en": "2026-06-22 10:28:29",
+  "total": 6,
   "archivos": [
     {
-      "name": "files/6btbedevhaql",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/6btbedevhaql",
-      "display_name": "Cnp-Ingresar-codigo-de-concepto-ARCA-valido",
-      "filename": "Cnp-Ingresar-codigo-de-concepto-ARCA-valido.pdf"
+      "name": "files/z87716vdarsx",
+      "uri": "https://generativelanguage.googleapis.com/v1beta/files/z87716vdarsx",
+      "display_name": "conceptos",
+      "filename": "conceptos.pdf"
     },
     {
-      "name": "files/felpgec36wm8",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/felpgec36wm8",
-      "display_name": "Cnp_Combinacion_subsistemas",
-      "filename": "Cnp_Combinacion_subsistemas.pdf"
-    },
-    {
-      "name": "files/5ape96sojopx",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/5ape96sojopx",
-      "display_name": "Cnp_Concepto_ ya_registrado",
-      "filename": "Cnp_Concepto_ ya_registrado.pdf"
-    },
-    {
-      "name": "files/dx15fhdtrv7w",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/dx15fhdtrv7w",
-      "display_name": "Cnp_Concepto_inexistente",
-      "filename": "Cnp_Concepto_inexistente.pdf"
-    },
-    {
-      "name": "files/4bxn11igk024",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/4bxn11igk024",
-      "display_name": "Cnp_Concepto_invalido",
-      "filename": "Cnp_Concepto_invalido.pdf"
-    },
-    {
-      "name": "files/c4krgr3if0pf",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/c4krgr3if0pf",
-      "display_name": "Cnp_Contacte_al_administrador",
-      "filename": "Cnp_Contacte_al_administrador.pdf"
-    },
-    {
-      "name": "files/gaycf24b4qvn",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/gaycf24b4qvn",
-      "display_name": "Cnp_Long_incorrecta (1)",
-      "filename": "Cnp_Long_incorrecta (1).pdf"
-    },
-    {
-      "name": "files/rr6qt3jx1ly3",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/rr6qt3jx1ly3",
-      "display_name": "Cnp_Long_incorrecta",
-      "filename": "Cnp_Long_incorrecta.pdf"
-    },
-    {
-      "name": "files/0xe6ou7637bs",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/0xe6ou7637bs",
-      "display_name": "Cnp_parametriz_descuentos",
-      "filename": "Cnp_parametriz_descuentos.pdf"
-    },
-    {
-      "name": "files/180r6ap5oeeb",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/180r6ap5oeeb",
-      "display_name": "Generacion_F931_es_una_relacion_laboral_activa",
-      "filename": "Generacion_F931_es_una_relacion_laboral_activa.pdf"
-    },
-    {
-      "name": "files/v9pmyq09tm7j",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/v9pmyq09tm7j",
-      "display_name": "Generación F931_liq_cuiles_especiales",
-      "filename": "Generación F931_liq_cuiles_especiales.pdf"
-    },
-    {
-      "name": "files/rk9y5oio1wum",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/rk9y5oio1wum",
-      "display_name": "Generación F931_valores_negativos",
-      "filename": "Generación F931_valores_negativos.pdf"
-    },
-    {
-      "name": "files/dbl91ap2bc8w",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/dbl91ap2bc8w",
+      "name": "files/iqycx69009ku",
+      "uri": "https://generativelanguage.googleapis.com/v1beta/files/iqycx69009ku",
       "display_name": "Guia-Errores-frecuentes-Servicio-denegado-al-intentar-generar-DDJJ",
       "filename": "Guia-Errores-frecuentes-Servicio-denegado-al-intentar-generar-DDJJ.pdf"
     },
     {
-      "name": "files/2nqfffp3mqgr",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/2nqfffp3mqgr",
-      "display_name": "Ingreso liq_Long_incorrecta",
-      "filename": "Ingreso liq_Long_incorrecta.pdf"
+      "name": "files/he0bj8mlc7rg",
+      "uri": "https://generativelanguage.googleapis.com/v1beta/files/he0bj8mlc7rg",
+      "display_name": "ingreso de liquidaciones",
+      "filename": "ingreso de liquidaciones.pdf"
     },
     {
-      "name": "files/m7quqykqcfuz",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/m7quqykqcfuz",
-      "display_name": "Ingreso liq_línea 999_campo_invalido",
-      "filename": "Ingreso liq_línea 999_campo_invalido.pdf"
-    },
-    {
-      "name": "files/rv3mu4hdo7ab",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/rv3mu4hdo7ab",
-      "display_name": "Ingreso liq_periodo_obligacion",
-      "filename": "Ingreso liq_periodo_obligacion.pdf"
-    },
-    {
-      "name": "files/yrxkk37hir5a",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/yrxkk37hir5a",
-      "display_name": "Ingreso-liq-Ajuste-maternidad",
-      "filename": "Ingreso-liq-Ajuste-maternidad.pdf"
-    },
-    {
-      "name": "files/l7lu440o0it2",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/l7lu440o0it2",
-      "display_name": "Ingreso-liq-El-CUIT-req1-reg5",
-      "filename": "Ingreso-liq-El-CUIT-req1-reg5.pdf"
-    },
-    {
-      "name": "files/ie6a7gb2e4gj",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/ie6a7gb2e4gj",
-      "display_name": "Ingreso-liq-El-periodo-de-ajuste-debe-ser-menor-al-de-la-liquidacion",
-      "filename": "Ingreso-liq-El-periodo-de-ajuste-debe-ser-menor-al-de-la-liquidacion.pdf"
-    },
-    {
-      "name": "files/mjcyhwvq6cjs",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/mjcyhwvq6cjs",
-      "display_name": "Ingreso-liq-La-cantidad-de-registros-04-informados-en-el-registro-01-X-no-coincide-con-los-encontrados-Y",
-      "filename": "Ingreso-liq-La-cantidad-de-registros-04-informados-en-el-registro-01-X-no-coincide-con-los-encontrados-Y.pdf"
-    },
-    {
-      "name": "files/vfst6dgz4pdm",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/vfst6dgz4pdm",
-      "display_name": "Ingreso-liq-La-linea-1-nro-liq",
-      "filename": "Ingreso-liq-La-linea-1-nro-liq.pdf"
-    },
-    {
-      "name": "files/l1jpwu5201bt",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/l1jpwu5201bt",
-      "display_name": "Ingreso-liq-Rectificativa-pendiente",
-      "filename": "Ingreso-liq-Rectificativa-pendiente.pdf"
-    },
-    {
-      "name": "files/cmhtk7p2xm1n",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/cmhtk7p2xm1n",
-      "display_name": "Ingreso_liq_Contacte_al_adm",
-      "filename": "Ingreso_liq_Contacte_al_adm.pdf"
-    },
-    {
-      "name": "files/1kerl3pizyeo",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/1kerl3pizyeo",
+      "name": "files/juru8bju4t0z",
+      "uri": "https://generativelanguage.googleapis.com/v1beta/files/juru8bju4t0z",
       "display_name": "Libro Sueldo Digital - Errores Frecuentes LSD",
       "filename": "Libro Sueldo Digital - Errores Frecuentes LSD.pdf"
     },
     {
-      "name": "files/i3j8bg3pbwax",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/i3j8bg3pbwax",
+      "name": "files/p9ad7c9ces89",
+      "uri": "https://generativelanguage.googleapis.com/v1beta/files/p9ad7c9ces89",
       "display_name": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0",
       "filename": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf"
     },
     {
-      "name": "files/1rbd3jjxb1la",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/1rbd3jjxb1la",
-      "display_name": "Servicio_habilitacion",
-      "filename": "Servicio_habilitacion.pdf"
-    },
-    {
-      "name": "files/085m2ll05sq9",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/085m2ll05sq9",
-      "display_name": "Validar Liq_Detracc_Base10",
-      "filename": "Validar Liq_Detracc_Base10.pdf"
-    },
-    {
-      "name": "files/l781pbf7481f",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/l781pbf7481f",
-      "display_name": "Validar Liq_Dif_calculo_rem",
-      "filename": "Validar Liq_Dif_calculo_rem.pdf"
-    },
-    {
-      "name": "files/xu8eol4naav4",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/xu8eol4naav4",
-      "display_name": "Validar Liq_Error_aportes",
-      "filename": "Validar Liq_Error_aportes.pdf"
-    },
-    {
-      "name": "files/hcax4ntk4gkk",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/hcax4ntk4gkk",
-      "display_name": "Validar Liq_Rem_Invalida",
-      "filename": "Validar Liq_Rem_Invalida.pdf"
-    },
-    {
-      "name": "files/14iq2eswjxxm",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/14iq2eswjxxm",
-      "display_name": "Validar Liq_RL_no_vigente",
-      "filename": "Validar Liq_RL_no_vigente.pdf"
-    },
-    {
-      "name": "files/lpbbunz3qmgs",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/lpbbunz3qmgs",
-      "display_name": "Validar Liq_sin_conceptos_liquidados",
-      "filename": "Validar Liq_sin_conceptos_liquidados.pdf"
-    },
-    {
-      "name": "files/c2kf3kjx8pk3",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/c2kf3kjx8pk3",
-      "display_name": "Validar-Liq-base-imp-rem-total",
-      "filename": "Validar-Liq-base-imp-rem-total.pdf"
-    },
-    {
-      "name": "files/81dlzafwwflw",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/81dlzafwwflw",
-      "display_name": "Validar-Liq-Cnp-SAC",
-      "filename": "Validar-Liq-Cnp-SAC.pdf"
-    },
-    {
-      "name": "files/rxt9qk1zb1gh",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/rxt9qk1zb1gh",
-      "display_name": "Validar-Liq-Debe-ingresar-la-cantidad-y-el-monto-de-las-horas-extras-en-forma-conjunta",
-      "filename": "Validar-Liq-Debe-ingresar-la-cantidad-y-el-monto-de-las-horas-extras-en-forma-conjunta.pdf"
-    },
-    {
-      "name": "files/qaxpi5m9ff62",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/qaxpi5m9ff62",
-      "display_name": "Validar-Liq-El-aporte-de-obra-social-calculado-por-ARCA-en-el-periodo-es-de-xxxx-y-Ud-informa-0",
-      "filename": "Validar-Liq-El-aporte-de-obra-social-calculado-por-ARCA-en-el-periodo-es-de-xxxx-y-Ud-informa-0.pdf"
-    },
-    {
-      "name": "files/ofck0wt58wt7",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/ofck0wt58wt7",
-      "display_name": "Validar-Liq-El-aporte-de-PAMI-calculado-por-ARCA-en-el-periodo-es-de-xxxx-y-Ud-informa-0",
-      "filename": "Validar-Liq-El-aporte-de-PAMI-calculado-por-ARCA-en-el-periodo-es-de-xxxx-y-Ud-informa-0.pdf"
-    },
-    {
-      "name": "files/n09a9b9osent",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/n09a9b9osent",
-      "display_name": "Validar-Liq-El-aporte-de-RENATRE-calculado-por-ARCA-en-el-periodo-es-de-xxxx-y-Ud-informa-0",
-      "filename": "Validar-Liq-El-aporte-de-RENATRE-calculado-por-ARCA-en-el-periodo-es-de-xxxx-y-Ud-informa-0.pdf"
-    },
-    {
-      "name": "files/3kf52w2cf39m",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/3kf52w2cf39m",
-      "display_name": "Validar-Liq-El-aporte-de-SIPA-calculado-por-ARCA-en-el-periodo-es-de-xxxx-y-Ud-informa-0",
-      "filename": "Validar-Liq-El-aporte-de-SIPA-calculado-por-ARCA-en-el-periodo-es-de-xxxx-y-Ud-informa-0.pdf"
-    },
-    {
-      "name": "files/snl5wixa0n2m",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/snl5wixa0n2m",
-      "display_name": "Validar-Liq-Importe-excedente-aportes-de-seguridad-social-invalido",
-      "filename": "Validar-Liq-Importe-excedente-aportes-de-seguridad-social-invalido.pdf"
-    },
-    {
-      "name": "files/zsbo3qalbs8s",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/zsbo3qalbs8s",
-      "display_name": "Validar-Liq-La-base-10-difiere-de-la-determinada-0",
-      "filename": "Validar-Liq-La-base-10-difiere-de-la-determinada-0.pdf"
-    },
-    {
-      "name": "files/k3mq8zeqkhde",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/k3mq8zeqkhde",
-      "display_name": "Validar-Liq-La-base-6-7",
-      "filename": "Validar-Liq-La-base-6-7.pdf"
-    },
-    {
-      "name": "files/q2qgwabnmh1y",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/q2qgwabnmh1y",
-      "display_name": "Validar-Liq-La-base-imponible-4-8-informada-a-nivel-de-nomina-difiere-de-la-determinada",
-      "filename": "Validar-Liq-La-base-imponible-4-8-informada-a-nivel-de-nomina-difiere-de-la-determinada.pdf"
-    },
-    {
-      "name": "files/fvdicsfrm22f",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/fvdicsfrm22f",
-      "display_name": "Validar-Liq-La-cantidad-de-horas-extras-no-puede-ser-menor-a-0-ni-mayor-a-999",
-      "filename": "Validar-Liq-La-cantidad-de-horas-extras-no-puede-ser-menor-a-0-ni-mayor-a-999.pdf"
-    },
-    {
-      "name": "files/cfkb1cdd41cl",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/cfkb1cdd41cl",
-      "display_name": "Validar-Liq-La-situacion-de-revista-debe-coincidir",
-      "filename": "Validar-Liq-La-situacion-de-revista-debe-coincidir.pdf"
-    },
-    {
-      "name": "files/i54zcvjmxqkh",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/i54zcvjmxqkh",
-      "display_name": "Validar-Liq-No-corresponde-informar-simultaneamente-el-concepto-XXXX-SAC-proporcional-con-conceptos-de-SAC-semest",
-      "filename": "Validar-Liq-No-corresponde-informar-simultaneamente-el-concepto-XXXX-SAC-proporcional-con-conceptos-de-SAC-semest.pdf"
-    },
-    {
-      "name": "files/ofjd2rh3uupx",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/ofjd2rh3uupx",
-      "display_name": "Validar-Liq-tarea-diferencial-2-10",
-      "filename": "Validar-Liq-tarea-diferencial-2-10.pdf"
-    },
-    {
-      "name": "files/fg9edjaejp1u",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/fg9edjaejp1u",
-      "display_name": "Validar-Liq-tarea-diferencial",
-      "filename": "Validar-Liq-tarea-diferencial.pdf"
-    },
-    {
-      "name": "files/epfio6pqbu8j",
-      "uri": "https://generativelanguage.googleapis.com/v1beta/files/epfio6pqbu8j",
-      "display_name": "Validar-Liq-Tipo-Empleador",
-      "filename": "Validar-Liq-Tipo-Empleador.pdf"
+      "name": "files/9g4zwy4fa7id",
+      "uri": "https://generativelanguage.googleapis.com/v1beta/files/9g4zwy4fa7id",
+      "display_name": "validaciones",
+      "filename": "validaciones.pdf"
     }
   ]
 }

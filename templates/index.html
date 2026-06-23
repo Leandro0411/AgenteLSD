@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Agente LSD — Validador ARCA | e-Sueldos</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230B1F45'/%3E%3Crect x='7' y='5' width='14' height='18' rx='2' fill='%231B56E8'/%3E%3Crect x='9' y='8' width='8' height='1.5' rx='.75' fill='%23EEF3FF'/%3E%3Crect x='9' y='11' width='10' height='1.5' rx='.75' fill='%23EEF3FF'/%3E%3Crect x='9' y='14' width='6' height='1.5' rx='.75' fill='%23EEF3FF'/%3E%3Ccircle cx='22' cy='22' r='7' fill='%2300C2A8'/%3E%3Cpath d='M18.8 22.2l2.2 2.2 3.8-3.8' stroke='%230B1F45' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23F7FAFF'/%3E%3Cpath d='M22.7 43.5h23.1c6.1 0 11.1-4.8 11.1-10.8 0-5.6-4.3-10.2-9.8-10.7C44.8 14.6 38.1 9.4 30.3 9.4c-8.4 0-15.4 6-16.9 13.9C8.1 24.6 4.1 29.3 4.1 34.9c0 6.8 5.5 8.6 18.6 8.6z' fill='%231B56E8'/%3E%3Cpath d='M24.4 36.5h20.9c3.8 0 6.8-2.8 6.8-6.3 0-3.3-2.6-6-6-6.3C44.5 18.8 39.8 15 34.1 15c-6.1 0-11.1 4.4-12.2 10.1-3.9.9-6.8 4.1-6.8 7.9 0 3.9 3.3 3.5 9.3 3.5z' fill='%233B82F6' opacity='.45'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -15,8 +15,12 @@
   <!-- HEADER -->
   <header>
     <a class="hdr-logo" href="https://e-sueldos.com" target="_blank">
-      <img src="https://e-sueldos.com/wp-content/uploads/2026/03/logo-03-1024x1024.png"
-           onerror="this.style.display='none'" alt="e-Sueldos">
+      <span class="hdr-cloud-logo" aria-hidden="true">
+        <svg viewBox="0 0 64 64" focusable="false">
+          <path d="M22.7 43.5h23.1c6.1 0 11.1-4.8 11.1-10.8 0-5.6-4.3-10.2-9.8-10.7C44.8 14.6 38.1 9.4 30.3 9.4c-8.4 0-15.4 6-16.9 13.9C8.1 24.6 4.1 29.3 4.1 34.9c0 6.8 5.5 8.6 18.6 8.6z"/>
+          <path d="M24.4 36.5h20.9c3.8 0 6.8-2.8 6.8-6.3 0-3.3-2.6-6-6-6.3C44.5 18.8 39.8 15 34.1 15c-6.1 0-11.1 4.4-12.2 10.1-3.9.9-6.8 4.1-6.8 7.9 0 3.9 3.3 3.5 9.3 3.5z"/>
+        </svg>
+      </span>
       <span class="hdr-logo-txt">e-<span>Sueldos</span></span>
     </a>
     <div class="hdr-sep"></div>
@@ -29,39 +33,46 @@
     </div>
   </header>
 
-  <!-- TABS NAV -->
-  <nav class="tabs-nav" role="tablist">
-    <button class="tab-btn activo" data-tab="validar" role="tab" aria-selected="true">
-      📂 Validar archivo
-    </button>
-    <button class="tab-btn" data-tab="consultar" role="tab" aria-selected="false">
-      💬 Modo consulta
-    </button>
-    <button class="tab-btn" data-tab="historial" role="tab" aria-selected="false">
-      🕐 Historial
-      <span id="hist-count" style="display:none;font-size:10px;background:var(--es-blue);color:#fff;border-radius:10px;padding:1px 6px;margin-left:2px;"></span>
-    </button>
-  </nav>
+  <div class="app-shell">
+    <aside class="side-nav" aria-label="Módulos">
+      <nav class="tabs-nav" role="tablist">
+        <button class="tab-btn activo" data-tab="validar" role="tab" aria-selected="true">
+          <span class="tab-ico" aria-hidden="true">TXT</span>
+          <span>Validar archivo</span>
+        </button>
+        <button class="tab-btn" data-tab="historial" role="tab" aria-selected="false">
+          <span class="tab-ico" aria-hidden="true">H</span>
+          <span>Historial</span>
+          <span id="hist-count"></span>
+        </button>
+      </nav>
+    </aside>
 
-  <!-- ══ TAB: VALIDAR ══ -->
-  <div class="tab-panel activo" id="tab-validar">
-    <main>
+    <div class="app-content">
+      <!-- ══ TAB: VALIDAR ══ -->
+      <div class="tab-panel activo" id="tab-validar">
+        <main>
       <section id="zona-carga">
         <div class="upload-hero">
-          <div class="upload-badge">🤖 Agente IA</div>
+          <div class="upload-badge">Agente IA para LSD</div>
           <h1>Revisá tu Libro Sueldo Digital antes de presentar</h1>
           <p>El agente analiza el TXT del LSD, detecta errores que ARCA va a rechazar y genera un instructivo detallado paso a paso para corregirlos en e-SUELDOS.</p>
+          <div class="upload-benefits" aria-label="Beneficios del análisis">
+            <span>Validación previa</span>
+            <span>Reglas determinísticas</span>
+            <span>Guía paso a paso</span>
+          </div>
         </div>
 
         <div id="drop">
           <input type="file" id="input-arch" accept=".txt">
-          <span class="drop-ico">📂</span>
+          <span class="drop-ico" aria-hidden="true">TXT</span>
           <div class="drop-t">Arrastrá el archivo acá o hacé clic para seleccionarlo</div>
           <div class="drop-s">Formato aceptado: <strong>.txt</strong> · Tamaño máximo: 50 MB</div>
         </div>
 
         <div id="arch-sel">
-          <span class="ai">📄</span>
+          <span class="ai" aria-hidden="true">TXT</span>
           <div class="af">
             <div id="arch-nombre">—</div>
             <div id="arch-tam">—</div>
@@ -69,24 +80,7 @@
           <button id="btn-q" title="Quitar archivo">✕</button>
         </div>
 
-        <!-- Errores ARCA opcional -->
-        <div id="zona-errores">
-          <div id="drop-err">
-            <input type="file" id="input-err" accept=".txt">
-            <span class="de-ico">⚠️</span>
-            <div class="de-t">
-              <strong>Archivo de errores ARCA (opcional)</strong>
-              Agregá el CSV de errores que devolvió ARCA para un diagnóstico más preciso
-            </div>
-          </div>
-          <div id="err-sel">
-            <span class="es-ico">⚠️</span>
-            <span id="err-nombre">—</span>
-            <button id="btn-err-q" title="Quitar">✕</button>
-          </div>
-        </div>
-
-        <button id="btn-a">Analizar con IA →</button>
+        <button id="btn-a">Analizar archivo con IA</button>
         <div id="err-box"><strong>Ocurrió un error</strong><span id="err-msg"></span></div>
       </section>
 
@@ -121,8 +115,6 @@
         </div>
         <ul id="pasos" style="display:none">
           <li class="paso" data-h="info_archivo"           data-ico="📂" data-label="Leyendo el archivo"           data-desc="Contando registros y verificando el tamaño"></li>
-          <li class="paso" data-h="parsear_errores_arca"   data-ico="⚠️" data-label="Leyendo errores ARCA"         data-desc="Identificando qué rechazó ARCA en la última presentación"></li>
-          <li class="paso" data-h="cruzar_errores_con_lsd" data-ico="🔗" data-label="Cruzando errores con el LSD" data-desc="Buscando la causa raíz de cada diferencia informada"></li>
           <li class="paso" data-h="validar_estructura"     data-ico="🏗️" data-label="Verificando estructura"       data-desc="Comprobando cabeceras, registros de empleados y cierres"></li>
           <li class="paso" data-h="validar_duplicados_reg04" data-ico="👥" data-label="Buscando legajos duplicados" data-desc="Detectando empleados con más de un registro"></li>
           <li class="paso" data-h="validar_comas_numericos"  data-ico="🔢" data-label="Revisando formato numérico" data-desc="Verificando que no haya comas en campos de importes"></li>
@@ -159,44 +151,56 @@
         </div>
         <button id="btn-nueva">← Analizar otro archivo</button>
       </section>
-    </main>
+        </main>
+      </div>
+
+      <!-- ══ TAB: HISTORIAL ══ -->
+      <div class="tab-panel" id="tab-historial">
+        <main>
+          <div class="hist-header">
+            <div>
+              <h2>Historial de análisis</h2>
+              <p>Revisá los últimos archivos evaluados en este navegador.</p>
+            </div>
+            <button id="btn-hist-limpiar" onclick="limpiarHistorial()">Borrar todo</button>
+          </div>
+          <div id="hist-contenido"></div>
+        </main>
+      </div>
+    </div>
   </div>
 
-  <!-- ══ TAB: CONSULTAR ══ -->
-  <div class="tab-panel" id="tab-consultar">
-    <main>
-      <div class="consulta-wrap">
-        <div class="chat-intro" id="chat-intro">
-          <strong>💬 Modo consulta — Preguntale al agente</strong>
-          <p>No hace falta subir ningún archivo. Podés preguntar sobre cómo funciona el sistema, por qué ocurre un error, cómo interpretar un resultado de ARCA, o cualquier duda sobre el Libro Sueldo Digital.</p>
-          <div class="chat-sugs">
-            <span class="chat-sug" onclick="enviarSugerencia(this)">¿Por qué un legajo no aparece en el LSD?</span>
-            <span class="chat-sug" onclick="enviarSugerencia(this)">¿Qué es la detracción y cuándo aplica?</span>
-            <span class="chat-sug" onclick="enviarSugerencia(this)">¿Cuándo uso el concepto 570.000 en vez de 560.000?</span>
-            <span class="chat-sug" onclick="enviarSugerencia(this)">¿Qué significa Base 9 en ARCA?</span>
-            <span class="chat-sug" onclick="enviarSugerencia(this)">¿Por qué ARCA rechaza el archivo?</span>
-            <span class="chat-sug" onclick="enviarSugerencia(this)">Explicame el flujo de Recalcular en e-Sueldos</span>
+  <!-- Chat flotante -->
+  <button class="chat-fab" id="chat-fab" type="button" aria-label="Abrir chat de IA" aria-expanded="false">
+    <span aria-hidden="true">?</span>
+  </button>
+  <div class="chat-dock" id="chat-dock" aria-hidden="true">
+    <div class="consulta-wrap">
+      <div class="chat-panel-head">
+        <div class="chat-intro-head">
+          <span aria-hidden="true">?</span>
+          <div>
+            <strong>Asistente LSD</strong>
+            <p id="chat-contexto">Consultá sobre estructura, reglas ARCA o el TXT cargado.</p>
           </div>
         </div>
-        <div class="chat-msgs" id="chat-msgs"></div>
-        <div class="chat-input-area">
-          <textarea id="chat-input" placeholder="Escribí tu consulta..." rows="1"></textarea>
-          <button id="btn-chat-clear" title="Nueva conversación" onclick="limpiarChat()">↺</button>
-          <button id="btn-chat-send" onclick="enviarMensajeChat()">↑</button>
+        <button class="chat-close" id="chat-close" type="button" title="Cerrar chat">✕</button>
+      </div>
+      <div class="chat-intro" id="chat-intro">
+        <div class="chat-sugs">
+          <button type="button" class="chat-sug" onclick="enviarSugerencia(this)">Explicame la estructura de este TXT</button>
+          <button type="button" class="chat-sug" onclick="enviarSugerencia(this)">¿Qué valida ARCA en el Libro Sueldo Digital?</button>
+          <button type="button" class="chat-sug" onclick="enviarSugerencia(this)">¿El CBU se informa en REG02 o REG04?</button>
+          <button type="button" class="chat-sug" onclick="enviarSugerencia(this)">¿Cuándo corresponde REG05?</button>
         </div>
       </div>
-    </main>
-  </div>
-
-  <!-- ══ TAB: HISTORIAL ══ -->
-  <div class="tab-panel" id="tab-historial">
-    <main>
-      <div class="hist-header">
-        <h2>Historial de análisis</h2>
-        <button id="btn-hist-limpiar" onclick="limpiarHistorial()">Borrar todo</button>
+      <div class="chat-msgs" id="chat-msgs"></div>
+      <div class="chat-input-area">
+        <textarea id="chat-input" placeholder="Preguntá sobre el TXT o las reglas LSD..." rows="1"></textarea>
+        <button id="btn-chat-clear" title="Nueva conversación" onclick="limpiarChat()">↺</button>
+        <button id="btn-chat-send" onclick="enviarMensajeChat()">↑</button>
       </div>
-      <div id="hist-contenido"></div>
-    </main>
+    </div>
   </div>
 
   <!-- Modal historial -->
@@ -215,10 +219,10 @@
     // ESTADO GLOBAL
     // ═══════════════════════════════════════════════════════
     let archivo        = null;
-    let archivoErrores = null;
     let sessionId      = null;
     let chatHistorial  = [];
     let chatEnProgreso = false;
+    let ultimoInforme  = null;
     const HIST_KEY = 'agente_lsd_historial';
 
     // ═══════════════════════════════════════════════════════
@@ -236,6 +240,10 @@
     const resultado  = document.getElementById('resultado');
     const errBox     = document.getElementById('err-box');
     const errMsg     = document.getElementById('err-msg');
+    const chatFab    = document.getElementById('chat-fab');
+    const chatDock   = document.getElementById('chat-dock');
+    const chatClose  = document.getElementById('chat-close');
+    const chatCtx    = document.getElementById('chat-contexto');
 
     // ═══════════════════════════════════════════════════════
     // HEALTH
@@ -267,41 +275,23 @@
     drop.addEventListener('drop', e=>{ e.preventDefault(); drop.classList.remove('over'); const f=e.dataTransfer.files[0]; if(f) selArch(f); });
     inputArch.addEventListener('change', ()=>{ if(inputArch.files[0]) selArch(inputArch.files[0]); });
 
-    // Drag & drop — errores ARCA
-    const dropErr   = document.getElementById('drop-err');
-    const inputErr  = document.getElementById('input-err');
-    const errSel    = document.getElementById('err-sel');
-    const errNombre = document.getElementById('err-nombre');
-    const btnErrQ   = document.getElementById('btn-err-q');
-    dropErr.addEventListener('dragover', e=>{ e.preventDefault(); dropErr.classList.add('over'); });
-    dropErr.addEventListener('dragleave', ()=>dropErr.classList.remove('over'));
-    dropErr.addEventListener('drop', e=>{ e.preventDefault(); dropErr.classList.remove('over'); const f=e.dataTransfer.files[0]; if(f) selErr(f); });
-    inputErr.addEventListener('change', ()=>{ if(inputErr.files[0]) selErr(inputErr.files[0]); });
-
-    function selErr(f) {
-      if(!f.name.toLowerCase().endsWith('.txt')) return;
-      archivoErrores = f;
-      errNombre.textContent = f.name;
-      errSel.style.display = 'flex';
-    }
-    btnErrQ.addEventListener('click', e=>{ e.stopPropagation(); archivoErrores=null; inputErr.value=''; errSel.style.display='none'; });
-
     function selArch(f) {
       if(!f.name.toLowerCase().endsWith('.txt')){ mostrarErr('El archivo debe tener extensión .txt'); return; }
       archivo = f;
+      ultimoInforme = null;
       archNombre.textContent = f.name;
       archTam.textContent = fmtTam(f.size);
       archSel.style.display = 'flex';
       btnA.style.display = 'block';
-      document.getElementById('zona-errores').style.display = 'block';
+      actualizarContextoChat();
       ocultarErr();
     }
     btnQ.addEventListener('click', ()=>{
-      archivo=null; archivoErrores=null;
-      inputArch.value=''; inputErr.value='';
+      archivo=null;
+      ultimoInforme=null; sessionId=null;
+      inputArch.value='';
       archSel.style.display='none'; btnA.style.display='none';
-      document.getElementById('zona-errores').style.display='none';
-      errSel.style.display='none';
+      actualizarContextoChat();
     });
     btnA.addEventListener('click', iniciarAnalisis);
 
@@ -318,11 +308,11 @@
       panelProg.style.display='block';
       errBox.style.display='none';
       progReset();
-      progInicializarLista(!!archivoErrores);
+      progInicializarLista();
 
       const fd = new FormData();
       fd.append('archivo', archivo);
-      if(archivoErrores) fd.append('archivo_errores', archivoErrores);
+      fd.append('modo', 'auto');
 
       fetch('/analizar', {method:'POST', body:fd})
         .then(resp=>{
@@ -365,15 +355,8 @@
     // MOTOR DE PROGRESO
     // ═══════════════════════════════════════════════════════
     const PASOS_CONFIG = [
-      { h:'info_archivo',           ico:'📂', label:'Leyendo el archivo',           desc:'Contando registros y verificando el tamaño' },
-      { h:'parsear_errores_arca',   ico:'⚠️', label:'Leyendo errores ARCA',         desc:'Identificando qué rechazó ARCA en la última presentación' },
-      { h:'cruzar_errores_con_lsd', ico:'🔗', label:'Cruzando errores con el LSD', desc:'Buscando la causa raíz de cada diferencia informada' },
-      { h:'validar_estructura',     ico:'🏗️', label:'Verificando estructura',       desc:'Comprobando cabeceras, registros y cierres' },
-      { h:'validar_duplicados_reg04', ico:'👥', label:'Buscando legajos duplicados', desc:'Detectando empleados con más de un registro' },
-      { h:'validar_comas_numericos',  ico:'🔢', label:'Revisando formato numérico', desc:'Verificando que no haya comas en campos de importes' },
-      { h:'validar_bases_reg04',      ico:'📊', label:'Verificando bases imponibles', desc:'Controlando concepto 560k vs 570k (Guía N°45)' },
-      { h:'validar_cbu',              ico:'🏦', label:'Controlando CBUs',             desc:'Verificando longitud y formato de los CBU' },
-      { h:'analizar_conceptos_reg03', ico:'📋', label:'Analizando conceptos',        desc:'Revisando los conceptos ARCA declarados en el archivo' },
+      { h:'validacion_deterministica', ico:'TXT', label:'Validando TXT',            desc:'Parseando registros y ejecutando reglas determinísticas' },
+      { h:'explicacion_ia', ico:'IA', label:'Preparando informe', desc:'Ordenando hallazgos y recomendaciones' },
     ];
     let _progPasosActivos = [];
     let _progCompletados  = [];
@@ -390,13 +373,11 @@
       document.getElementById('prog-activo-ico').textContent='⚙️';
       document.getElementById('prog-activo-nombre').textContent='Conectando...';
       document.getElementById('prog-activo-desc').textContent='Preparando las herramientas de validación';
+      document.getElementById('prog-activo-dots').style.display='flex';
       document.getElementById('prog-lista').innerHTML='';
     }
-    function progInicializarLista(tieneErrores) {
-      _progPasosActivos = PASOS_CONFIG.filter(p=>{
-        if(p.h==='parsear_errores_arca'||p.h==='cruzar_errores_con_lsd') return tieneErrores;
-        return true;
-      });
+    function progInicializarLista() {
+      _progPasosActivos = PASOS_CONFIG;
       const lista = document.getElementById('prog-lista');
       lista.innerHTML='';
       _progPasosActivos.forEach(p=>{
@@ -411,7 +392,7 @@
         const ms  = Date.now()-(_progTiempoInicio[_progActualNombre]||Date.now());
         const seg = (ms/1000).toFixed(1);
         const li  = document.getElementById('pi-'+_progActualNombre);
-        if(li){ li.className='prog-item hecho'; li.querySelector('.prog-item-check').textContent='✓'; const t=li.querySelector('.prog-item-tiempo'); if(t) t.textContent=seg+'s'; }
+        if(li){ li.className='prog-item hecho'; li.querySelector('.prog-item-check').textContent='✓'; const t=li.querySelector('.prog-item-tiempo'); if(t) t.textContent = ms >= 500 ? seg+'s' : ''; }
         _progCompletados.push(_progActualNombre);
       }
       _progActualNombre=nombre; _progTiempoInicio[nombre]=Date.now();
@@ -425,7 +406,9 @@
       document.getElementById('prog-titulo').textContent=label;
       document.getElementById('prog-subtitulo').textContent=desc;
       const total=_progPasosActivos.length||1;
-      const pct=Math.round((_progCompletados.length/total)*100);
+      const conocido = _progPasosActivos.find(p => p.h === nombre);
+      if (!conocido) return;  // herramienta no esperada → ignorar
+      const pct = Math.min(Math.round((_progCompletados.length / total) * 100), 98);
       document.getElementById('prog-bar').style.width=pct+'%';
       document.getElementById('prog-pct').textContent=pct+'%';
     }
@@ -447,9 +430,70 @@
     // ═══════════════════════════════════════════════════════
     // MOSTRAR INFORME
     // ═══════════════════════════════════════════════════════
+    function claveProblema(p){
+      if(p.id) return String(p.id);
+      return [
+        (p.titulo || '').trim().toLowerCase(),
+        (p.descripcion || '').trim().toLowerCase()
+      ].filter(Boolean).join('|') || 'problema';
+    }
+
+    function unirUnicos(a,b){
+      return Array.from(new Set([...(a||[]), ...(b||[])].filter(Boolean)));
+    }
+
+    function agruparProblemas(problemas){
+      const mapa = new Map();
+      (problemas||[]).forEach(p=>{
+        const key = claveProblema(p);
+        if(!mapa.has(key)){
+          mapa.set(key, {
+            ...p,
+            todos_los_cuils_afectados: unirUnicos(p.todos_los_cuils_afectados, p.ejemplos_cuil),
+            ejemplos_cuil: unirUnicos(p.ejemplos_cuil, p.todos_los_cuils_afectados).slice(0,5),
+            diferencias_por_cuil: [...(p.diferencias_por_cuil||[])],
+            detalle_tecnico: p.detalle_tecnico ? {
+              ...p.detalle_tecnico,
+              evidencias: [...(p.detalle_tecnico.evidencias||[])]
+            } : null,
+            _agrupados: 1
+          });
+          return;
+        }
+        const base = mapa.get(key);
+        base._agrupados += 1;
+        base.todos_los_cuils_afectados = unirUnicos(base.todos_los_cuils_afectados, p.todos_los_cuils_afectados || p.ejemplos_cuil);
+        base.ejemplos_cuil = base.todos_los_cuils_afectados.slice(0,5);
+        base.cuils_afectados = Math.max(base.cuils_afectados||0, base.todos_los_cuils_afectados.length);
+        base.diferencias_por_cuil = [...(base.diferencias_por_cuil||[]), ...(p.diferencias_por_cuil||[])];
+        if(p.detalle_tecnico){
+          if(!base.detalle_tecnico){
+            base.detalle_tecnico = {...p.detalle_tecnico, evidencias:[...(p.detalle_tecnico.evidencias||[])]};
+          } else {
+            base.detalle_tecnico.evidencias = [
+              ...(base.detalle_tecnico.evidencias||[]),
+              ...(p.detalle_tecnico.evidencias||[])
+            ];
+            base.detalle_tecnico.total_evidencias = base.detalle_tecnico.evidencias.length;
+          }
+        }
+      });
+      return Array.from(mapa.values()).map(p=>{
+        p.todos_los_cuils_afectados = unirUnicos(p.todos_los_cuils_afectados, p.ejemplos_cuil);
+        p.cuils_afectados = p.todos_los_cuils_afectados.length || p.cuils_afectados || 0;
+        p.diferencias_por_cuil = Array.from(new Map((p.diferencias_por_cuil||[]).map(d=>[
+          `${d.cuil||''}-${d.base||''}-${d.informado||''}-${d.determinado||''}`,
+          d
+        ])).values());
+        return p;
+      });
+    }
+
     function mostrarInforme(data) {
       panelProg.style.display='none';
       resultado.style.display='block';
+      ultimoInforme = data;
+      actualizarContextoChat();
 
       const vw=document.getElementById('veredicto-wrap');
       const vi=document.getElementById('v-ico');
@@ -475,7 +519,7 @@
       } else { arcaPanel.style.display='none'; }
 
       const s=data.estadisticas||{};
-      const probs=data.problemas||[];
+      const probs=agruparProblemas(data.problemas||[]);
 
       // Calcular contadores DESDE el array real (el modelo suele equivocarse en estadisticas)
       const nCrit = probs.filter(p=>(p.severidad||'').toUpperCase()==='CRITICO').length;
@@ -495,9 +539,9 @@
         lista.innerHTML='<div class="sin-prob">✅ No se encontraron problemas. El archivo está limpio.</div>';
       } else {
         // Título usa el mismo conteo que los stats
-        const partesCrit = nCrit>0 ? `${nCrit} error${nCrit>1?'es':''} crítico${nCrit>1?'s':''}` : '';
+        const partesCrit = nCrit>0 ? `${nCrit} tipo${nCrit>1?'s':''} de error crítico` : '';
         const partesAdv  = nAdv>0  ? `${nAdv} advertencia${nAdv>1?'s':''}` : '';
-        tit.textContent = [partesCrit, partesAdv].filter(Boolean).join(' y ') || `${probs.length} problemas encontrados`;
+        tit.textContent = [partesCrit, partesAdv].filter(Boolean).join(' y ') || `${probs.length} tipos de problema encontrados`;
         const ord={CRITICO:0,ADVERTENCIA:1,INFO:2};
         probs.sort((a,b)=>(ord[a.severidad]??9)-(ord[b.severidad]??9));
         probs.forEach((p,i)=>{
@@ -509,10 +553,14 @@
           const todosLosC = p.todos_los_cuils_afectados || p.ejemplos_cuil || [];
           let cuilsH = '';
           if(todosLosC.length){
-            const visibles  = todosLosC.slice(0,20);
+            const visibles  = todosLosC.slice(0,30);
             const restantes = todosLosC.length - visibles.length;
-            cuilsH = visibles.map(c=>`<span class="ctag">${esc(c)}</span>`).join('');
-            if(restantes>0) cuilsH += `<span class="ctag" style="background:var(--surface-2);color:var(--txt-lo);">+${restantes} más</span>`;
+            const tags = visibles.map(c=>`<span class="ctag">${esc(c)}</span>`).join('');
+            cuilsH = `
+              <details class="affected-box">
+                <summary>${todosLosC.length} empleado${todosLosC.length!==1?'s':''} afectado${todosLosC.length!==1?'s':''}</summary>
+                <div class="cuils">${tags}${restantes>0?`<span class="ctag muted">+${restantes} más</span>`:''}</div>
+              </details>`;
           }
 
           // ── Diferencias por CUIL (tabla detallada) ─────────────────
@@ -561,7 +609,45 @@
               <div style="margin-top:12px;padding:16px 18px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);">
                 ${pasosH}
               </div>
-            </div>`;
+            </div>`; 
+          }
+
+          // ── Detalle técnico para soporte/debug ──────────────────────
+          let techH = '';
+          const tech = p.detalle_tecnico;
+          if(tech && (tech.evidencias||[]).length){
+            const evidenciasH = (tech.evidencias||[]).slice(0,30).map((ev,idx)=>{
+              const posiciones = ev.posiciones_usadas || ev.detalle?.posiciones_usadas || {};
+              const posH = Object.entries(posiciones).map(([k,v])=>`<span class="tech-chip">${esc(k)}: ${esc(String(v))}</span>`).join('');
+              const regs03 = ev.raw_reg03_relacionados || ev.detalle?.raw_reg03_relacionados || [];
+              const regs03H = regs03.length ? regs03.map(r=>`
+                <div class="raw-line">
+                  <div class="raw-meta">REG03 · línea ${esc(String(r.linea??'—'))} · concepto ${esc(r.codigo||'—')} · importe ${esc(r.importe||'—')} · ${esc(r.debito_credito||'—')}</div>
+                  <code>${esc(r.raw||'')}</code>
+                </div>`).join('') : '';
+              const rawReg04 = ev.raw_reg04 || ev.detalle?.raw_reg04 || '';
+              return `
+                <details class="tech-evidence" ${idx===0?'open':''}>
+                  <summary>CUIL ${esc(ev.cuil||'—')} · línea ${esc(String(ev.linea??'—'))}</summary>
+                  ${posH?`<div class="tech-chips">${posH}</div>`:''}
+                  ${rawReg04?`<div class="raw-line"><div class="raw-meta">REG04 crudo</div><code>${esc(rawReg04)}</code></div>`:''}
+                  ${regs03H?`<div class="raw-group">${regs03H}</div>`:''}
+                  <pre class="tech-json">${esc(JSON.stringify(ev.detalle||{}, null, 2))}</pre>
+                </details>`;
+            }).join('');
+            techH = `
+              <div class="dl">
+                <details class="tech-box">
+                  <summary>Detalle técnico</summary>
+                  <div class="tech-rule">
+                    <span>Regla: <strong>${esc(tech.regla_id||p.id||'')}</strong></span>
+                    ${tech.campo?`<span>Campo: <strong>${esc(tech.campo)}</strong></span>`:''}
+                    ${tech.fuente_pdf?`<span>Fuente: <strong>${esc(tech.fuente_pdf)}</strong></span>`:''}
+                    <span>Evidencias: <strong>${tech.total_evidencias??(tech.evidencias||[]).length}</strong></span>
+                  </div>
+                  ${evidenciasH}
+                </details>
+              </div>`;
           }
 
           div.innerHTML=`
@@ -573,11 +659,12 @@
             </div>
             <div class="pc-body">
               <div class="dl"><div class="dl-l">¿Qué está pasando?</div><div class="dl-t">${esc(p.descripcion||'')}</div></div>
-              ${cuilsH?`<div class="dl"><div class="dl-l">👥 Empleados afectados</div><div class="cuils" style="margin-top:6px;">${cuilsH}</div></div>`:''}
+              ${cuilsH?`<div class="dl"><div class="dl-l">Empleados afectados</div>${cuilsH}</div>`:''}
               ${difH}
               <div class="dl"><div class="dl-l">¿Por qué ocurre?</div><div class="dl-t">${esc(p.causa||'')}</div></div>
               ${tutH}
               <div class="dl"><div class="dl-l">Resumen de solución</div><div class="sol-box">${esc(p.solucion||'')}</div></div>
+              ${techH}
             </div>`;
           div.querySelector('.pc-head').addEventListener('click',()=>div.classList.toggle('open'));
           lista.appendChild(div);
@@ -605,23 +692,62 @@
     }
     document.getElementById('btn-nueva').addEventListener('click',()=>{
       resultado.style.display='none'; panelProg.style.display='none'; zonaCarga.style.display='block';
-      archivo=null; archivoErrores=null; sessionId=null;
+      archivo=null; sessionId=null;
+      ultimoInforme=null;
       inputArch.value='';
-      document.getElementById('input-err').value='';
       archSel.style.display='none'; btnA.style.display='none';
-      document.getElementById('zona-errores').style.display='none';
-      errSel.style.display='none'; ocultarErr();
+      ocultarErr();
+      actualizarContextoChat();
     });
 
     // ═══════════════════════════════════════════════════════
-    // MODO CONSULTA
+      // CHAT FLOTANTE
     // ═══════════════════════════════════════════════════════
     const chatInput   = document.getElementById('chat-input');
     const chatMsgs    = document.getElementById('chat-msgs');
     const btnChatSend = document.getElementById('btn-chat-send');
+    chatFab.addEventListener('click',()=>abrirChat());
+    chatClose.addEventListener('click',()=>cerrarChat());
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&chatDock.classList.contains('open')) cerrarChat(); });
     chatInput.addEventListener('input',()=>{ chatInput.style.height='auto'; chatInput.style.height=Math.min(chatInput.scrollHeight,150)+'px'; });
     chatInput.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();enviarMensajeChat();} });
-    function enviarSugerencia(el){ chatInput.value=el.textContent.trim(); chatInput.dispatchEvent(new Event('input')); enviarMensajeChat(); }
+    function abrirChat(){
+      chatDock.classList.add('open');
+      chatDock.setAttribute('aria-hidden','false');
+      chatFab.setAttribute('aria-expanded','true');
+      actualizarContextoChat();
+      setTimeout(()=>chatInput.focus(),80);
+    }
+    function cerrarChat(){
+      chatDock.classList.remove('open');
+      chatDock.setAttribute('aria-hidden','true');
+      chatFab.setAttribute('aria-expanded','false');
+    }
+    function actualizarContextoChat(){
+      if(!chatCtx) return;
+      if(ultimoInforme && _archivoNombreActual){
+        chatCtx.textContent = `Contexto activo: ${_archivoNombreActual}`;
+      } else if(archivo){
+        chatCtx.textContent = `Archivo seleccionado: ${archivo.name}`;
+      } else {
+        chatCtx.textContent = 'Consultá sobre estructura, reglas ARCA o el TXT cargado.';
+      }
+    }
+    function resumenChatActual(){
+      if(!ultimoInforme) return null;
+      const probs=(ultimoInforme.problemas||[]).slice(0,8).map(p=>({
+        titulo:p.titulo, severidad:p.severidad, descripcion:p.descripcion, solucion:p.solucion
+      }));
+      return {
+        archivo:_archivoNombreActual||archivo?.name||null,
+        veredicto:ultimoInforme.veredicto||null,
+        razon:ultimoInforme.veredicto_razon||null,
+        estadisticas:ultimoInforme.estadisticas||null,
+        resumen:ultimoInforme.resumen||null,
+        problemas:probs
+      };
+    }
+    function enviarSugerencia(el){ abrirChat(); chatInput.value=el.textContent.trim(); chatInput.dispatchEvent(new Event('input')); enviarMensajeChat(); }
     function agregarMensaje(rol,contenido,esHTML){
       const div=document.createElement('div'); div.className=`msg ${rol}`;
       const av=document.createElement('div'); av.className='msg-av'; av.textContent=rol==='user'?'U':'e';
@@ -650,7 +776,12 @@
       chatHistorial.push({role:'user',content:txt});
       chatInput.value=''; chatInput.style.height='auto';
       const tEl=agregarTyping();
-      fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:chatHistorial})})
+      fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        messages:chatHistorial,
+        session_id:sessionId,
+        archivo:_archivoNombreActual||archivo?.name||null,
+        informe:resumenChatActual()
+      })})
       .then(r=>r.json()).then(d=>{
         tEl.remove(); const resp=d.respuesta||'Sin respuesta.';
         chatHistorial.push({role:'assistant',content:resp});

@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os, sys, json, tempfile, threading, queue, uuid, time
+from collections import defaultdict
 from flask import Flask, render_template, request, Response, jsonify, session
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -19,6 +20,7 @@ from agente_lsd import (
     TOOL_DECLARATIONS, TOOL_FUNCTIONS,
     TOOL_DECLARATIONS_ALL, TOOL_FUNCTIONS_ALL,
     SYSTEM_PROMPT, MODELO,
+    ejecutar_validaciones_deterministicas,
 )
 # correcciones.py desactivado — la corrección la realiza el agente general externo
 try:
@@ -45,7 +47,9 @@ TOOL_LABELS = {
     "validar_cbu":                    "Controlando CBUs...",
     "analizar_conceptos_reg03":       "Analizando conceptos declarados...",
     "validar_periodo_reg01":          "Verificando período y cabecera REG01...",
+    "validar_reg01_completo":         "Validando cabecera REG01...",
     "validar_conteo_reg04_en_reg01":  "Controlando conteo de empleados declarado...",
+    "validar_integridad_empleados":   "Validando integridad por empleado...",
     "validar_longitud_registros":     "Verificando longitud de cada registro...",
     "validar_valores_negativos":      "Buscando valores negativos en campos monetarios...",
     "validar_notacion_cientifica":    "Verificando campos numéricos (notación científica)...",
@@ -64,20 +68,16 @@ MODO INTERFAZ WEB — ANÁLISIS INICIAL
 ═══════════════════════════════════════════════════════════════
 Respondé ÚNICAMENTE con un JSON válido, sin texto fuera del JSON, sin markdown.
 
-IMPORTANTE — PRECHECKS YA EJECUTADOS:
-Antes de que leas este mensaje, se ejecutaron automáticamente 14 validaciones
-hardcoded sobre el archivo. Los resultados te llegan como salidas de herramientas.
+IMPORTANTE — VALIDACIÓN DETERMINÍSTICA YA EJECUTADA:
+Antes de que leas este mensaje, Python ya parseó el TXT una sola vez y ejecutó
+el motor de reglas determinísticas. Los resultados llegan en el JSON
+"Validación determinística".
 TU ROL ES:
-  1. Interpretar y explicar en lenguaje simple los resultados de esos prechecks.
-  2. Detectar errores de NEGOCIO que el código no puede verificar:
-     - Bases imponibles inconsistentes con la normativa MOPRE vigente
-     - Detracción (Base 9 / Base 10) mal calculada
-     - Diferencias en cruce con el archivo de errores ARCA (si se subió)
-     - Cualquier otro problema semántico que requiera leer el contenido
-  3. NO repitas análisis que los prechecks ya hicieron (duplicados, longitudes,
-     comas, conteos, CBU, SAC fuera de período, etc.).
-  4. Si un precheck encontró un error, incorporalo en "problemas" con su tutorial.
-  5. Si todos los prechecks reportaron "ok: true", enfocate en los errores de negocio.
+  1. Interpretar y explicar en lenguaje simple los issues del JSON determinístico.
+  2. Incorporar el cruce con errores ARCA si viene incluido.
+  3. NO inventar errores que no estén en "issues" ni en el cruce ARCA.
+  4. Agrupar issues con el mismo "id" en un solo problema.
+  5. Si no hay issues críticos ni advertencias, declarar el archivo presentable.
 
 REGLAS DE LENGUAJE — MUY IMPORTANTE:
 - Hablá como si le explicaras a un administrativo que nunca vio código.
@@ -235,58 +235,215 @@ def _es_fin(response) -> bool:
         return True
 
 
+def _informe_basico_deterministico(validacion: dict, arca_contexto: dict | None = None) -> dict:
+    issues = validacion.get("issues", [])
+    criticos = [i for i in issues if i.get("severidad") == "CRITICO"]
+    advertencias = [i for i in issues if i.get("severidad") == "ADVERTENCIA"]
+    stats = validacion.get("indices", {})
+    problemas = []
+    agrupados: dict[str, list[dict]] = defaultdict(list)
+    for issue in issues:
+        agrupados[issue["id"]].append(issue)
+
+    for rule_id, items in agrupados.items():
+        first = items[0]
+        cuils = sorted({i.get("cuil") for i in items if i.get("cuil")})
+        problemas.append({
+            "id": rule_id,
+            "severidad": first.get("severidad", "INFO"),
+            "titulo": first.get("campo", rule_id),
+            "descripcion": first.get("mensaje", ""),
+            "cuils_afectados": len(cuils),
+            "todos_los_cuils_afectados": cuils,
+            "ejemplos_cuil": cuils[:5],
+            "causa": first.get("mensaje", ""),
+            "solucion": first.get("fix_hint", ""),
+            "tutorial_pasos": [
+                {
+                    "paso": 1,
+                    "titulo": "Revisar el origen",
+                    "instruccion": first.get("mensaje", "Revisá el dato indicado por la validación."),
+                    "referencia": first.get("fuente_pdf", ""),
+                },
+                {
+                    "paso": 2,
+                    "titulo": "Corregir en e-Sueldos",
+                    "instruccion": first.get("fix_hint", "Corregí el dato en e-Sueldos."),
+                    "referencia": first.get("fuente_pdf", ""),
+                },
+                {
+                    "paso": 3,
+                    "titulo": "Recalcular",
+                    "instruccion": "Recalculá la liquidación o el Libro Sueldo Digital desde e-Sueldos.",
+                    "referencia": first.get("fuente_pdf", ""),
+                },
+                {
+                    "paso": 4,
+                    "titulo": "Validar nuevamente",
+                    "instruccion": "Volvé a exportar el LSD y validalo de nuevo con el Agente.",
+                    "referencia": first.get("fuente_pdf", ""),
+                },
+            ],
+            "diagnostico_cruce": "",
+            "diferencias_por_cuil": [],
+            "detalle_tecnico": _detalle_tecnico_problema(rule_id, items),
+        })
+
+    veredicto = "SERÁ RECHAZADO" if criticos else ("REVISAR" if advertencias else "PRESENTABLE")
+    if veredicto == "PRESENTABLE":
+        razon = "El motor determinístico no encontró errores críticos ni advertencias."
+        resumen = "El archivo respeta las reglas determinísticas del layout LSD validadas por el agente."
+    elif veredicto == "REVISAR":
+        razon = f"Hay {len(advertencias)} advertencia(s) para revisar antes de presentar."
+        resumen = "El archivo no tiene errores críticos determinísticos, pero conviene revisar las advertencias."
+    else:
+        razon = f"Hay {len(criticos)} error(es) crítico(s) determinísticos."
+        resumen = "El archivo tiene errores críticos de estructura o formato que pueden causar rechazo."
+
+    return {
+        "resumen": resumen,
+        "veredicto": veredicto,
+        "veredicto_razon": razon,
+        "estadisticas": {
+            "total_empleados": stats.get("empleados", 0),
+            "total_conceptos": validacion.get("registros_por_tipo", {}).get("03", 0),
+            "errores_criticos": len(criticos),
+            "advertencias": len(advertencias),
+        },
+        "errores_arca": {
+            "presente": bool(arca_contexto),
+            "total": 0,
+            "resumen": "",
+        },
+        "problemas": problemas,
+    }
+
+
+def _detalle_tecnico_problema(rule_id: str, items: list[dict], limite: int = 30) -> dict:
+    first = items[0] if items else {}
+    evidencias = []
+    for item in items[:limite]:
+        detalle = item.get("detalle") or {}
+        evidencia = {
+            "linea": item.get("linea"),
+            "cuil": item.get("cuil"),
+            "detalle": detalle,
+        }
+        if "raw_reg04" in detalle:
+            evidencia["raw_reg04"] = detalle.get("raw_reg04")
+        if "raw_reg03_relacionados" in detalle:
+            evidencia["raw_reg03_relacionados"] = detalle.get("raw_reg03_relacionados") or []
+        if "posiciones_usadas" in detalle:
+            evidencia["posiciones_usadas"] = detalle.get("posiciones_usadas") or {}
+        evidencias.append(evidencia)
+
+    return {
+        "regla_id": rule_id,
+        "severidad": first.get("severidad"),
+        "campo": first.get("campo"),
+        "fuente_pdf": first.get("fuente_pdf"),
+        "mensaje_regla": first.get("mensaje"),
+        "fix_hint": first.get("fix_hint"),
+        "total_evidencias": len(items),
+        "evidencias": evidencias,
+    }
+
+
+def _adjuntar_detalle_tecnico(informe: dict, validacion: dict) -> dict:
+    issues = validacion.get("issues", [])
+    agrupados: dict[str, list[dict]] = defaultdict(list)
+    for issue in issues:
+        agrupados[issue.get("id", "")].append(issue)
+    for problema in informe.get("problemas", []) or []:
+        rule_id = problema.get("id")
+        if rule_id and rule_id in agrupados:
+            problema["detalle_tecnico"] = _detalle_tecnico_problema(rule_id, agrupados[rule_id])
+    return informe
+
+
 # ── Fase 1: Análisis ──────────────────────────────────────────────────────────
 
 def ejecutar_analisis(session_id: str, q: queue.Queue):
-    """Fase 1: análisis completo del archivo con Gemini."""
+    """Fase 1: validación determinística + explicación con Gemini."""
     sesion = SESIONES.get(session_id)
     if not sesion:
         q.put({"tipo": "error", "mensaje": "Sesión no encontrada."}); q.put(None); return
 
-    client = _get_client()
-    if not client:
-        q.put({"tipo": "error", "mensaje": "GEMINI_API_KEY no configurada."}); q.put(None); return
-
     ruta          = sesion['ruta']
     ruta_err      = sesion.get('ruta_errores')
     tiene_errores = ruta_err is not None
+    modo          = sesion.get('modo', 'auto')
 
-    # PDFs de normativa (opcionales)
-    pdf_parts = _cargar_pdf_parts()
+    q.put({"tipo": "herramienta", "nombre": "validacion_deterministica",
+           "label": "Ejecutando validaciones determinísticas..."})
+    try:
+        deterministico = ejecutar_validaciones_deterministicas(ruta)
+    except Exception as exc:
+        q.put({"tipo": "error", "mensaje": f"Error validando TXT: {exc}"}); q.put(None); return
 
-    # Mensaje inicial
+    arca_contexto = None
     if tiene_errores:
-        msg_texto = (
-            f"Analizá el archivo LSD y los errores de validación ARCA. "
-            f"Producí el informe en formato JSON.\n\n"
-            f"Archivo LSD: {os.path.abspath(ruta)}\n"
-            f"Archivo de errores ARCA: {os.path.abspath(ruta_err)}\n\n"
-            "Orden sugerido:\n"
-            "  1. info_archivo (LSD)\n"
-            "  2. parsear_errores_arca (errores ARCA)\n"
-            "  3. cruzar_errores_con_lsd (cruce LSD + errores)\n"
-            "  4. validar_estructura, validar_duplicados_reg04, validar_comas_numericos, "
-            "validar_bases_reg04, validar_cbu, analizar_conceptos_reg03\n\n"
-            "Respondé ÚNICAMENTE con el JSON estructurado."
-        )
-    else:
-        msg_texto = (
-            f"Analizá el archivo LSD y producí el informe en formato JSON.\n\n"
-            f"Archivo: {os.path.abspath(ruta)}\n\n"
-            "Ejecutá TODAS las herramientas de validación. "
-            "Respondé ÚNICAMENTE con el JSON estructurado."
-        )
+        try:
+            from validador_errores import tool_parsear_errores_arca, tool_cruzar_errores_con_lsd
+            q.put({"tipo": "herramienta", "nombre": "parsear_errores_arca",
+                   "label": TOOL_LABELS.get("parsear_errores_arca", "Leyendo errores ARCA...")})
+            errores_arca = tool_parsear_errores_arca(ruta_err)
+            q.put({"tipo": "herramienta", "nombre": "cruzar_errores_con_lsd",
+                   "label": TOOL_LABELS.get("cruzar_errores_con_lsd", "Cruzando errores ARCA...")})
+            cruce_arca = tool_cruzar_errores_con_lsd(ruta_err, ruta)
+            arca_contexto = {"errores_arca": errores_arca, "cruce_arca": cruce_arca}
+        except Exception as exc:
+            arca_contexto = {"error": str(exc)}
+
+    sesion['validacion_deterministica'] = deterministico
+
+    if modo == "rapido":
+        informe = _informe_basico_deterministico(deterministico, arca_contexto)
+        informe["modo_analisis"] = "rapido"
+        sesion['informe'] = informe
+        q.put({"tipo": "informe", "data": informe})
+        q.put(None)
+        return
+
+    if modo == "auto" and deterministico.get("errores_criticos", 0) == 0 and deterministico.get("advertencias", 0) == 0 and not arca_contexto:
+        informe = _informe_basico_deterministico(deterministico)
+        informe["modo_analisis"] = "auto_sin_ia"
+        sesion['informe'] = informe
+        q.put({"tipo": "informe", "data": informe})
+        q.put(None)
+        return
+
+    client = _get_client()
+    if not client:
+        informe = _informe_basico_deterministico(deterministico, arca_contexto)
+        sesion['informe'] = informe
+        q.put({"tipo": "informe", "data": informe})
+        q.put(None)
+        return
+
+    q.put({"tipo": "herramienta", "nombre": "explicacion_ia",
+           "label": "Preparando informe con IA..."})
+
+    # La normativa se usa como catálogo local versionado en RULE_CATALOG/reglas_lsd.json.
+    # No adjuntamos PDFs en cada análisis: la IA solo explica el JSON determinístico.
+    pdf_parts = []
+
+    msg_texto = (
+        "Convertí el siguiente resultado de validación determinística en el informe JSON estructurado "
+        "de la interfaz. NO ejecutes validaciones nuevas ni inventes errores: usá únicamente los issues "
+        "del JSON determinístico y, si existe, el contexto de errores ARCA.\n\n"
+        f"Archivo LSD: {os.path.abspath(ruta)}\n"
+        f"Validación determinística:\n{json.dumps(deterministico, ensure_ascii=False, indent=2)}\n\n"
+    )
+    if arca_contexto:
+        msg_texto += f"Contexto ARCA:\n{json.dumps(arca_contexto, ensure_ascii=False, indent=2)}\n\n"
+    msg_texto += "Respondé ÚNICAMENTE con el JSON estructurado solicitado por el sistema."
 
     if pdf_parts:
         msg_texto += f"\n\nAdjunto {len(pdf_parts)} documentos de normativa LSD para enriquecer el diagnóstico."
 
-    # Herramientas activas según contexto
-    decls_activas = TOOL_DECLARATIONS_ALL if tiene_errores else TOOL_DECLARATIONS
-    fns_activas   = TOOL_FUNCTIONS_ALL    if tiene_errores else TOOL_FUNCTIONS
-
     config = gtypes.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT_ANALISIS,
-        tools=[gtypes.Tool(function_declarations=decls_activas)],
         temperature=0.1,
     )
 
@@ -298,91 +455,43 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
         )
     ]
 
-    paso = 0
-    while True:
-        paso += 1
-        if paso > 25:
-            q.put({"tipo": "error", "mensaje": "Límite de análisis superado."}); break
-
-        # Llamar a Gemini con retry para errores transitorios (503, 429, 500)
-        resp = None
-        for intento in range(4):
-            try:
-                resp = client.models.generate_content(
-                    model=MODELO,
-                    contents=historial,
-                    config=config,
-                )
-                break  # éxito
-            except Exception as e:
-                msg = str(e)
-                es_transitorio = any(c in msg for c in ('503', '429', '500', 'UNAVAILABLE', 'overloaded'))
-                if es_transitorio and intento < 3:
-                    espera = 5 * (2 ** intento)  # 5s, 10s, 20s
-                    q.put({"tipo": "aviso", "mensaje": f"Gemini ocupado, reintentando en {espera}s... (intento {intento+2}/4)"})
-                    time.sleep(espera)
-                else:
-                    q.put({"tipo": "error", "mensaje": msg}); q.put(None); return
-
-
-        # Agregar respuesta al historial
-        historial.append(resp.candidates[0].content)
-
-        # IMPORTANTE: En Gemini, finish_reason=STOP tanto para tool calls
-        # como para respuestas finales. Hay que chequear fn_calls PRIMERO.
-        fn_calls = _extraer_fn_calls(resp)
-
-        if fn_calls:
-            # El modelo quiere llamar herramientas → procesarlas
-            pass  # continúa al bloque de fn_responses abajo
-        elif _es_fin(resp):
-            # No hay tool calls y el modelo terminó → extraer respuesta final
-            texto = _extraer_texto_respuesta(resp)
-            if texto:
-                # Limpiar posibles markdown fences
-                if texto.startswith("```"):
-                    partes = texto.split("```")
-                    texto = partes[1] if len(partes) > 1 else texto
-                    if texto.startswith("json"):
-                        texto = texto[4:]
-                try:
-                    informe = json.loads(texto.strip())
-                    sesion['informe'] = informe
-                    sesion['historial_analisis'] = historial
-                    q.put({"tipo": "informe", "data": informe})
-                except json.JSONDecodeError:
-                    q.put({"tipo": "texto_libre", "data": texto})
-            else:
-                q.put({"tipo": "error", "mensaje": "El modelo no devolvió respuesta. Intentá de nuevo."})
-            break
-        else:
-            # Sin tool calls y sin finish → algo raro, salir
-            break
-
-        if not fn_calls:
-            break
-
-        fn_responses = []
-        for fc in fn_calls:
-            fn_name  = fc.name
-            fn_input = dict(fc.args)
-
-            q.put({"tipo": "herramienta", "nombre": fn_name,
-                   "label": TOOL_LABELS.get(fn_name, fn_name)})
-
-            if fn_name in fns_activas:
-                try:
-                    res = fns_activas[fn_name](**fn_input)
-                except Exception as exc:
-                    res = {"ok": False, "error": str(exc)}
-            else:
-                res = {"ok": False, "error": f"Herramienta desconocida: {fn_name}"}
-
-            fn_responses.append(
-                gtypes.Part.from_function_response(name=fn_name, response=res)
+    resp = None
+    for intento in range(4):
+        try:
+            resp = client.models.generate_content(
+                model=MODELO,
+                contents=historial,
+                config=config,
             )
+            break
+        except Exception as e:
+            msg = str(e)
+            es_transitorio = any(c in msg for c in ('503', '429', '500', 'UNAVAILABLE', 'overloaded'))
+            if es_transitorio and intento < 3:
+                espera = 5 * (2 ** intento)
+                q.put({"tipo": "aviso", "mensaje": f"Gemini ocupado, reintentando en {espera}s... (intento {intento+2}/4)"})
+                time.sleep(espera)
+            else:
+                q.put({"tipo": "error", "mensaje": msg}); q.put(None); return
 
-        historial.append(gtypes.Content(role="user", parts=fn_responses))
+    historial.append(resp.candidates[0].content)
+    texto = _extraer_texto_respuesta(resp)
+    if texto:
+        if texto.startswith("```"):
+            partes = texto.split("```")
+            texto = partes[1] if len(partes) > 1 else texto
+            if texto.startswith("json"):
+                texto = texto[4:]
+        try:
+            informe = json.loads(texto.strip())
+            informe = _adjuntar_detalle_tecnico(informe, deterministico)
+            sesion['informe'] = informe
+            sesion['historial_analisis'] = historial
+            q.put({"tipo": "informe", "data": informe})
+        except json.JSONDecodeError:
+            q.put({"tipo": "texto_libre", "data": texto})
+    else:
+        q.put({"tipo": "error", "mensaje": "El modelo no devolvió respuesta. Intentá de nuevo."})
 
     q.put(None)
 
@@ -404,6 +513,9 @@ def analizar():
     archivo = request.files['archivo']
     if not archivo.filename.lower().endswith('.txt'):
         return jsonify({"error": "El archivo debe ser .txt"}), 400
+    modo = request.form.get('modo', 'auto')
+    if modo not in ('auto', 'rapido', 'profundo'):
+        modo = 'auto'
 
     with tempfile.NamedTemporaryFile(mode='wb', suffix='.txt', delete=False, prefix='lsd_') as tmp:
         archivo.save(tmp)
@@ -424,6 +536,7 @@ def analizar():
         'ruta':              ruta_tmp,
         'ruta_errores':      ruta_errores,
         'tiene_errores':     ruta_errores is not None,
+        'modo':              modo,
         'informe':           None,
         'historial_analisis': []
     }
@@ -447,6 +560,83 @@ def analizar():
 
 
 # Rutas /corregir y /descargar eliminadas — la corrección la realiza el agente general externo
+
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    data = request.get_json(silent=True) or {}
+    messages = data.get('messages') or []
+    session_id = data.get('session_id')
+    informe_cliente = data.get('informe')
+    nombre_archivo = data.get('archivo')
+
+    client = _get_client()
+    if not client:
+        return jsonify({"respuesta": "La API Key de Gemini no está configurada."}), 503
+
+    sesion = SESIONES.get(session_id) if session_id else None
+    informe = sesion.get('informe') if sesion else None
+    if not informe:
+        informe = informe_cliente
+
+    contexto = {
+        "archivo": nombre_archivo,
+        "hay_txt_cargado": bool(sesion),
+        "informe": informe,
+        "validacion_deterministica": sesion.get('validacion_deterministica') if sesion else None,
+    }
+
+    if sesion and sesion.get('ruta') and os.path.exists(sesion['ruta']):
+        try:
+            with open(sesion['ruta'], encoding='latin-1') as f:
+                lineas = [l.rstrip('\r\n') for l in f]
+            contexto["txt"] = {
+                "total_lineas": len(lineas),
+                "primeras_lineas": lineas[:25],
+                "ultimas_lineas": lineas[-15:],
+            }
+        except Exception:
+            pass
+
+    system_chat = SYSTEM_PROMPT + """
+
+═══════════════════════════════════════════════════════════════
+MODO CHAT CONTEXTUAL
+═══════════════════════════════════════════════════════════════
+Respondé en español, claro y directo. El usuario puede preguntar sobre:
+- estructura del TXT de Libro Sueldo Digital,
+- reglas generales de ARCA/LSD,
+- el archivo cargado y el informe generado en esta sesión.
+
+No inventes datos del TXT. Si falta contexto, decilo y pedí que primero cargue o analice un archivo.
+Para preguntas técnicas podés mencionar REG01/REG02/REG03/REG04/REG05, posiciones y campos.
+Recordatorio de formato oficial relevante:
+- REG02 contiene CBU en posiciones 74-95 y forma de pago en posición 115.
+- REG05 corresponde a trabajadores eventuales; puede no existir si no corresponde.
+"""
+
+    contenido = [
+        gtypes.Part.from_text(text="Contexto disponible de la sesión:\n" + json.dumps(contexto, ensure_ascii=False, indent=2))
+    ]
+    for m in messages[-12:]:
+        role = "model" if m.get("role") == "assistant" else "user"
+        text = str(m.get("content") or "")
+        if text.strip():
+            contenido.append(gtypes.Part.from_text(text=f"{role.upper()}: {text}"))
+
+    try:
+        resp = client.models.generate_content(
+            model=MODELO,
+            contents=[gtypes.Content(role="user", parts=contenido)],
+            config=gtypes.GenerateContentConfig(
+                system_instruction=system_chat,
+                temperature=0.2,
+            ),
+        )
+        texto = _extraer_texto_respuesta(resp) or "No pude generar una respuesta."
+        return jsonify({"respuesta": texto})
+    except Exception as e:
+        return jsonify({"respuesta": f"Error consultando a Gemini: {e}"}), 500
 
 
 @app.route('/health')

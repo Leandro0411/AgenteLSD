@@ -22,6 +22,7 @@ import os
 import json
 import re
 from collections import defaultdict
+from decimal import Decimal, InvalidOperation
 
 # ── Importar herramientas de cruce con errores ARCA (opcional) ────────────────
 try:
@@ -50,24 +51,47 @@ MODELO = "gemini-2.5-flash"
 TIPO_START = 0;  TIPO_END   = 2
 CUIL_START = 2;  CUIL_END   = 13
 REG03_COD_START = 13; REG03_COD_END = 20
+REG03_CONCEPTO_START = 13; REG03_CONCEPTO_END = 23
+REG03_CANTIDAD_START = 23; REG03_CANTIDAD_END = 28
+REG03_UNIDAD_START = 28; REG03_UNIDAD_END = 29
 REG03_IMP_START = 29; REG03_IMP_END = 44
+REG03_DEB_CRED_START = 44; REG03_DEB_CRED_END = 45
+REG03_PERIODO_AJUSTE_START = 45; REG03_PERIODO_AJUSTE_END = 51
 REG04_BASE4_START  = 220; REG04_BASE4_END    = 235
 REG04_BASE10_START = 340; REG04_BASE10_END   = 355
 
 # Nuevas constantes — spec LSD v2 completa (posiciones 0-indexed)
 REG01_PERIODO_START       = 15;  REG01_PERIODO_END       = 21
+REG01_TIPO_LIQ_START      = 21;  REG01_TIPO_LIQ_END      = 22
+REG01_NRO_LIQ_START       = 22;  REG01_NRO_LIQ_END       = 27
+REG01_DIAS_BASE_START     = 27;  REG01_DIAS_BASE_END     = 29
 REG01_CANT_REG04_START    = 29;  REG01_CANT_REG04_END    = 35
+REG02_CBU_START           = 73;  REG02_CBU_END           = 95
+REG02_DIAS_LIQ_START      = 95;  REG02_DIAS_LIQ_END      = 98
+REG02_FECHA_PAGO_START    = 98;  REG02_FECHA_PAGO_END    = 106
+REG02_FECHA_RUB_START     = 106; REG02_FECHA_RUB_END     = 114
+REG02_FORMA_PAGO_START    = 114; REG02_FORMA_PAGO_END    = 115
 REG04_REM_BRUTA_START     = 160; REG04_REM_BRUTA_END     = 175
 REG04_BASE1_START         = 175; REG04_BASE1_END         = 190
+REG04_BASE2_START         = 190; REG04_BASE2_END         = 205
+REG04_BASE3_START         = 205; REG04_BASE3_END         = 220
+REG04_BASE5_START         = 235; REG04_BASE5_END         = 250
+REG04_BASE6_START         = 250; REG04_BASE6_END         = 265
+REG04_BASE7_START         = 265; REG04_BASE7_END         = 280
+REG04_BASE8_START         = 280; REG04_BASE8_END         = 295
+REG04_BASE9_START         = 295; REG04_BASE9_END         = 310
+REG04_DIF_APORTE_SS_START = 310; REG04_DIF_APORTE_SS_END = 325
+REG04_DIF_CONTR_SS_START  = 325; REG04_DIF_CONTR_SS_END  = 340
 REG04_HORAS_EXTRAS_START  = 340; REG04_HORAS_EXTRAS_END  = 355
+REG04_DETRACCION_START    = 355; REG04_DETRACCION_END    = 370
 
 # Longitudes exactas por tipo (ancho fijo)
 LONGITUDES_REQUERIDAS = {
     '01': 35,
     '02': 115,
     '03': 51,   # sin el sufijo ".e-s" de e-SUELDOS (aceptable hasta 55)
-    '04': 370,  # mínimo; el CBU y forma de pago se agregan al final
-    '05': 65,
+    '04': 370,
+    '05': 65,   # trabajadores eventuales; puede no existir
 }
 
 # ---------------------------------------------------------------------------
@@ -90,23 +114,851 @@ def _cuil(linea: str) -> str:
     return linea[CUIL_START:CUIL_END] if len(linea) >= CUIL_END else '?'
 
 # ---------------------------------------------------------------------------
+# PARSER FORMAL + ÍNDICES + MOTOR DE REGLAS DETERMINÍSTICO
+# ---------------------------------------------------------------------------
+
+_ANALISIS_CACHE: dict[tuple[str, float, int], dict] = {}
+
+RULE_CATALOG = {
+    "LSD-REG01-STRUCT-001": {
+        "severidad": "CRITICO",
+        "campo": "REG01",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "El archivo debe tener exactamente un REG01 y debe ser la primera línea no vacía.",
+        "fix_hint": "Regenerar el TXT desde e-Sueldos para reconstruir la cabecera.",
+    },
+    "LSD-REG02-STRUCT-001": {
+        "severidad": "CRITICO",
+        "campo": "REG02",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "El archivo debe incluir registros REG02 de empleados.",
+        "fix_hint": "Revisar la liquidación y volver a exportar el LSD.",
+    },
+    "LSD-CUIL-ORPHAN-001": {
+        "severidad": "CRITICO",
+        "campo": "CUIL",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Todo CUIL informado en REG03, REG04 o REG05 debe tener cabecera REG02.",
+        "fix_hint": "Regenerar el archivo para que cada trabajador tenga su registro de datos generales.",
+    },
+    "LSD-TIPO-UNKNOWN-001": {
+        "severidad": "ADVERTENCIA",
+        "campo": "Tipo de registro",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "El archivo contiene tipos de registro fuera de 01, 02, 03, 04 y 05.",
+        "fix_hint": "Verificar que el TXT no tenga líneas extra o contenido agregado manualmente.",
+    },
+    "LSD-REG01-COUNT04-001": {
+        "severidad": "CRITICO",
+        "campo": "REG01 cantidad REG04",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "La cantidad de REG04 declarada en REG01 debe coincidir con los REG04 reales.",
+        "fix_hint": "Regenerar el TXT desde e-Sueldos para corregir el contador.",
+    },
+    "LSD-LENGTH-001": {
+        "severidad": "CRITICO",
+        "campo": "Longitud de registros",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Los registros deben respetar el ancho fijo del layout LSD.",
+        "fix_hint": "No editar el TXT manualmente; regenerarlo desde e-Sueldos.",
+    },
+    "LSD-REG04-DUP-001": {
+        "severidad": "CRITICO",
+        "campo": "REG04",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Un CUIL tiene más de un REG04 y puede duplicar bases imponibles.",
+        "fix_hint": "Consolidar la liquidación del empleado y regenerar el LSD.",
+    },
+    "LSD-NUM-COMMA-001": {
+        "severidad": "CRITICO",
+        "campo": "Campos numéricos",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Los campos numéricos no deben contener comas.",
+        "fix_hint": "Corregir el origen del formato numérico y regenerar el TXT.",
+    },
+    "LSD-NUM-NEG-001": {
+        "severidad": "CRITICO",
+        "campo": "Importes",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "El LSD no admite importes negativos en campos monetarios.",
+        "fix_hint": "Informar descuentos con el indicador correspondiente y no como importe negativo.",
+    },
+    "LSD-NUM-SCI-001": {
+        "severidad": "CRITICO",
+        "campo": "Campos numéricos",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Los campos numéricos no deben usar notación científica.",
+        "fix_hint": "Actualizar e-Sueldos si corresponde y regenerar el archivo.",
+    },
+    "LSD-NUM-FORMAT-001": {
+        "severidad": "CRITICO",
+        "campo": "Campos numéricos",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Los campos numéricos de ancho fijo deben tener solo dígitos y longitud exacta.",
+        "fix_hint": "Regenerar el TXT sin editar importes manualmente ni usar separadores.",
+    },
+    "LSD-REG03-DEB-CRED-001": {
+        "severidad": "CRITICO",
+        "campo": "REG03 débito/crédito",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "El indicador de débito/crédito de REG03 debe ser D o C.",
+        "fix_hint": "Corregir la naturaleza del concepto en e-Sueldos y regenerar el TXT.",
+    },
+    "LSD-REG03-AJUSTE-001": {
+        "severidad": "CRITICO",
+        "campo": "REG03 período ajuste",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "El período de ajuste de REG03 debe ser AAAAMM, 000000 o blanco.",
+        "fix_hint": "Revisar conceptos retroactivos y regenerar el TXT.",
+    },
+    "LSD-REG02-CBU-001": {
+        "severidad": "CRITICO",
+        "campo": "REG02 CBU",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Si forma de pago es 3, el CBU debe tener exactamente 22 dígitos en REG02 posiciones 74-95.",
+        "fix_hint": "Completar un CBU válido o cambiar la forma de pago y regenerar el TXT.",
+    },
+    "LSD-REG01-PERIOD-001": {
+        "severidad": "CRITICO",
+        "campo": "REG01 período",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "El período de REG01 debe tener formato AAAAMM válido.",
+        "fix_hint": "Revisar período, tipo de envío y número de presentación antes de exportar.",
+    },
+    "LSD-REG01-CUIT-001": {
+        "severidad": "CRITICO",
+        "campo": "REG01 CUIT empleador",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "El CUIT empleador de REG01 debe tener 11 dígitos y dígito verificador válido.",
+        "fix_hint": "Revisar el CUIT de la empresa configurado en e-Sueldos y regenerar el TXT.",
+    },
+    "LSD-REG01-LIQ-001": {
+        "severidad": "CRITICO",
+        "campo": "REG01 tipo/número de liquidación",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "REG01 debe respetar tipo de liquidación, número de liquidación y días base según el tipo de envío.",
+        "fix_hint": "Revisar el período y la liquidación exportada. Para SJ usar tipo M/Q/D/H y días base 30.",
+    },
+    "LSD-CUIL-FORMAT-001": {
+        "severidad": "CRITICO",
+        "campo": "CUIL",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Los CUIL informados deben tener 11 dígitos y dígito verificador válido.",
+        "fix_hint": "Corregir el CUIL del empleado en e-Sueldos y volver a exportar.",
+    },
+    "LSD-REG02-DUP-001": {
+        "severidad": "CRITICO",
+        "campo": "REG02",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "No debe haber más de un REG02 para el mismo CUIL.",
+        "fix_hint": "Revisar legajos duplicados o relaciones repetidas del trabajador y regenerar el TXT.",
+    },
+    "LSD-EMP-INTEGRITY-001": {
+        "severidad": "CRITICO",
+        "campo": "Integridad por empleado",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Si un empleado tiene conceptos REG03, debe tener bases/atributos REG04.",
+        "fix_hint": "Recalcular el Libro Sueldo Digital para que se generen los atributos del empleado.",
+    },
+    "LSD-REG02-FECHA-001": {
+        "severidad": "CRITICO",
+        "campo": "REG02 fechas",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "La fecha de pago debe tener formato AAAAMMDD válido; fecha de rúbrica es opcional pero si se informa debe ser válida.",
+        "fix_hint": "Corregir fecha de pago/rúbrica en la liquidación y regenerar el TXT.",
+    },
+    "LSD-REG02-FORMA-PAGO-001": {
+        "severidad": "CRITICO",
+        "campo": "REG02 forma de pago",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "La forma de pago debe ser 1, 2 o 3.",
+        "fix_hint": "Seleccionar una forma de pago válida para el empleado.",
+    },
+    "LSD-REG04-BASE-001": {
+        "severidad": "ADVERTENCIA",
+        "campo": "REG04 bases imponibles",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Base 4 en cero con Base 10 con valor puede indicar parametrización incorrecta 560/570.",
+        "fix_hint": "Revisar conceptos no contributivos y parametrización de Guía 45.",
+    },
+    "LSD-REG04-REM-001": {
+        "severidad": "CRITICO",
+        "campo": "REG04 Remuneración/Base 1",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "La Base 1 no debe superar la remuneración bruta.",
+        "fix_hint": "Recalcular el LSD desde e-Sueldos.",
+    },
+    "LSD-REG04-BASE-NEG-001": {
+        "severidad": "CRITICO",
+        "campo": "REG04 bases imponibles",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Las bases imponibles y diferenciales no deben ser negativas.",
+        "fix_hint": "Revisar importes, detracción y bases calculadas antes de exportar.",
+    },
+    "LSD-REG04-DETRACCION-001": {
+        "severidad": "CRITICO",
+        "campo": "REG04 detracción/base 10",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Base imponible 10 debe ser coherente con Base 2 menos importe a detraer.",
+        "fix_hint": "Recalcular detracción Ley 27.430 y regenerar el LSD.",
+    },
+    "LSD-REG04-BASES-CONCEPTOS-001": {
+        "severidad": "CRITICO",
+        "campo": "REG03/REG04 bases imponibles",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Las bases imponibles informadas en REG04 no son coherentes con conceptos REG03 conocidos por generar diferencias ARCA.",
+        "fix_hint": "Revisar parametrización de conceptos no remunerativos/detracción y recalcular el LSD desde e-Sueldos.",
+    },
+    "LSD-REG03-CONCEPTO-001": {
+        "severidad": "ADVERTENCIA",
+        "campo": "REG03 concepto ARCA",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Concepto ARCA obsoleto o de uso problemático detectado.",
+        "fix_hint": "Revisar equivalencias de conceptos según Guía 45.",
+    },
+    "LSD-REG03-SAC-001": {
+        "severidad": "CRITICO",
+        "campo": "REG03 SAC",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Conceptos SAC semestrales solo corresponden en junio o diciembre.",
+        "fix_hint": "Usar el concepto proporcional/correcto o mover la liquidación al período correspondiente.",
+    },
+}
+
+def _slice(linea: str, start: int, end: int) -> str:
+    return linea[start:end] if len(linea) > start else ''
+
+def _int_or_none(valor: str) -> int | None:
+    valor = (valor or '').strip()
+    if not valor or not re.fullmatch(r'-?\d+', valor):
+        return None
+    return int(valor)
+
+def _decimal_centavos_or_none(valor: str) -> Decimal | None:
+    valor = (valor or '').strip()
+    if not re.fullmatch(r'-?\d+', valor):
+        return None
+    try:
+        return Decimal(valor) / Decimal(100)
+    except InvalidOperation:
+        return None
+
+def _campo_numerico_exacto(valor: str, longitud: int, permitir_blanco: bool = False) -> bool:
+    if permitir_blanco and not (valor or '').strip():
+        return True
+    return len(valor) == longitud and valor.isdigit()
+
+def _money_or_none(valor: str) -> Decimal | None:
+    return _decimal_centavos_or_none(valor)
+
+def _periodo_yyyymm_valido(valor: str, permitir_blanco: bool = False, permitir_ceros: bool = False) -> bool:
+    valor = valor or ''
+    if permitir_blanco and not valor.strip():
+        return True
+    if permitir_ceros and valor == "000000":
+        return True
+    if not re.fullmatch(r'\d{6}', valor):
+        return False
+    return 1 <= int(valor[4:6]) <= 12
+
+def _fecha_yyyymmdd_valida(valor: str, permitir_blanco: bool = False) -> bool:
+    valor = valor or ''
+    if permitir_blanco and not valor.strip():
+        return True
+    if not re.fullmatch(r'\d{8}', valor):
+        return False
+    anio = int(valor[:4]); mes = int(valor[4:6]); dia = int(valor[6:8])
+    if not (1900 <= anio <= 2100 and 1 <= mes <= 12):
+        return False
+    dias_mes = [31, 29 if (anio % 400 == 0 or (anio % 4 == 0 and anio % 100 != 0)) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    return 1 <= dia <= dias_mes[mes - 1]
+
+def _cuit_cuil_valido(valor: str) -> bool:
+    if not re.fullmatch(r'\d{11}', valor or ''):
+        return False
+    pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
+    suma = sum(int(valor[i]) * pesos[i] for i in range(10))
+    resto = suma % 11
+    digito = 11 - resto
+    if digito == 11:
+        digito = 0
+    elif digito == 10:
+        digito = 9
+    return digito == int(valor[-1])
+
+def parse_reg01(linea: str, nro_linea: int) -> dict:
+    return {
+        "tipo": "01", "linea": nro_linea, "raw": linea, "longitud": len(linea),
+        "cuit_empleador": _slice(linea, 2, 13),
+        "tipo_envio": _slice(linea, 13, 15),
+        "periodo": _slice(linea, REG01_PERIODO_START, REG01_PERIODO_END),
+        "tipo_liquidacion": _slice(linea, 21, 22),
+        "nro_presentacion": _slice(linea, 22, 27),
+        "dias_base": _slice(linea, 27, 29),
+        "cantidad_reg04": _int_or_none(_slice(linea, REG01_CANT_REG04_START, REG01_CANT_REG04_END)),
+    }
+
+def parse_reg02(linea: str, nro_linea: int) -> dict:
+    return {
+        "tipo": "02", "linea": nro_linea, "raw": linea, "longitud": len(linea),
+        "cuil": _slice(linea, 2, 13),
+        "legajo": _slice(linea, 13, 23),
+        "dependencia": _slice(linea, 23, 73),
+        "cbu": _slice(linea, REG02_CBU_START, REG02_CBU_END),
+        "dias_liquidados": _slice(linea, 95, 98),
+        "fecha_pago": _slice(linea, 98, 106),
+        "fecha_rubrica": _slice(linea, 106, 114),
+        "forma_pago": _slice(linea, REG02_FORMA_PAGO_START, REG02_FORMA_PAGO_END),
+    }
+
+def parse_reg03(linea: str, nro_linea: int) -> dict:
+    return {
+        "tipo": "03", "linea": nro_linea, "raw": linea, "longitud": len(linea),
+        "cuil": _slice(linea, 2, 13),
+        "codigo_concepto": _slice(linea, REG03_CONCEPTO_START, REG03_CONCEPTO_END).strip(),
+        "codigo_arca": _slice(linea, REG03_COD_START, REG03_COD_END).strip(),
+        "cantidad": _slice(linea, REG03_CANTIDAD_START, REG03_CANTIDAD_END).strip(),
+        "unidad": _slice(linea, REG03_UNIDAD_START, REG03_UNIDAD_END).strip(),
+        "importe_raw": _slice(linea, REG03_IMP_START, REG03_IMP_END).strip(),
+        "importe": _money_or_none(_slice(linea, REG03_IMP_START, REG03_IMP_END)),
+        "debito_credito": _slice(linea, REG03_DEB_CRED_START, REG03_DEB_CRED_END).strip(),
+        "periodo_ajuste": _slice(linea, REG03_PERIODO_AJUSTE_START, REG03_PERIODO_AJUSTE_END).strip(),
+    }
+
+def parse_reg04(linea: str, nro_linea: int) -> dict:
+    return {
+        "tipo": "04", "linea": nro_linea, "raw": linea, "longitud": len(linea),
+        "cuil": _slice(linea, 2, 13),
+        "rem_bruta_raw": _slice(linea, REG04_REM_BRUTA_START, REG04_REM_BRUTA_END).strip(),
+        "rem_bruta": _money_or_none(_slice(linea, REG04_REM_BRUTA_START, REG04_REM_BRUTA_END)),
+        "base1_raw": _slice(linea, REG04_BASE1_START, REG04_BASE1_END).strip(),
+        "base1": _money_or_none(_slice(linea, REG04_BASE1_START, REG04_BASE1_END)),
+        "base2_raw": _slice(linea, REG04_BASE2_START, REG04_BASE2_END).strip(),
+        "base2": _money_or_none(_slice(linea, REG04_BASE2_START, REG04_BASE2_END)),
+        "base3_raw": _slice(linea, REG04_BASE3_START, REG04_BASE3_END).strip(),
+        "base3": _money_or_none(_slice(linea, REG04_BASE3_START, REG04_BASE3_END)),
+        "base4_raw": _slice(linea, REG04_BASE4_START, REG04_BASE4_END).strip(),
+        "base4": _money_or_none(_slice(linea, REG04_BASE4_START, REG04_BASE4_END)),
+        "base5_raw": _slice(linea, REG04_BASE5_START, REG04_BASE5_END).strip(),
+        "base5": _money_or_none(_slice(linea, REG04_BASE5_START, REG04_BASE5_END)),
+        "base6_raw": _slice(linea, REG04_BASE6_START, REG04_BASE6_END).strip(),
+        "base6": _money_or_none(_slice(linea, REG04_BASE6_START, REG04_BASE6_END)),
+        "base7_raw": _slice(linea, REG04_BASE7_START, REG04_BASE7_END).strip(),
+        "base7": _money_or_none(_slice(linea, REG04_BASE7_START, REG04_BASE7_END)),
+        "base8_raw": _slice(linea, REG04_BASE8_START, REG04_BASE8_END).strip(),
+        "base8": _money_or_none(_slice(linea, REG04_BASE8_START, REG04_BASE8_END)),
+        "base9_raw": _slice(linea, REG04_BASE9_START, REG04_BASE9_END).strip(),
+        "base9": _money_or_none(_slice(linea, REG04_BASE9_START, REG04_BASE9_END)),
+        "dif_aporte_ss_raw": _slice(linea, REG04_DIF_APORTE_SS_START, REG04_DIF_APORTE_SS_END).strip(),
+        "dif_aporte_ss": _money_or_none(_slice(linea, REG04_DIF_APORTE_SS_START, REG04_DIF_APORTE_SS_END)),
+        "dif_contr_ss_raw": _slice(linea, REG04_DIF_CONTR_SS_START, REG04_DIF_CONTR_SS_END).strip(),
+        "dif_contr_ss": _money_or_none(_slice(linea, REG04_DIF_CONTR_SS_START, REG04_DIF_CONTR_SS_END)),
+        "base10_raw": _slice(linea, REG04_BASE10_START, REG04_BASE10_END).strip(),
+        "base10": _money_or_none(_slice(linea, REG04_BASE10_START, REG04_BASE10_END)),
+        "importe_detraer_raw": _slice(linea, REG04_DETRACCION_START, REG04_DETRACCION_END).strip(),
+        "importe_detraer": _money_or_none(_slice(linea, REG04_DETRACCION_START, REG04_DETRACCION_END)),
+    }
+
+def parse_reg05(linea: str, nro_linea: int) -> dict:
+    return {
+        "tipo": "05", "linea": nro_linea, "raw": linea, "longitud": len(linea),
+        "cuil": _slice(linea, 2, 13),
+        "categoria_profesional": _slice(linea, 13, 19),
+        "puesto": _slice(linea, 19, 23),
+        "fecha_ingreso": _slice(linea, 23, 31),
+        "fecha_egreso": _slice(linea, 31, 39),
+        "importe_raw": _slice(linea, 39, 54).strip(),
+        "importe": _money_or_none(_slice(linea, 39, 54)),
+        "cuit_eventual": _slice(linea, 54, 65),
+    }
+
+def parse_registro(linea: str, nro_linea: int) -> dict:
+    tipo = _tipo(linea)
+    if tipo == '01': return parse_reg01(linea, nro_linea)
+    if tipo == '02': return parse_reg02(linea, nro_linea)
+    if tipo == '03': return parse_reg03(linea, nro_linea)
+    if tipo == '04': return parse_reg04(linea, nro_linea)
+    if tipo == '05': return parse_reg05(linea, nro_linea)
+    return {"tipo": tipo, "linea": nro_linea, "raw": linea, "longitud": len(linea), "cuil": _cuil(linea)}
+
+def _add_issue(issues: list[dict], rule_id: str, **extra) -> None:
+    rule = RULE_CATALOG[rule_id]
+    issues.append({"id": rule_id, **rule, **extra})
+
+def _add_numeric_issue(issues: list[dict], reg: dict, campo: str, valor: str, longitud: int, permitir_blanco: bool = False) -> None:
+    if _campo_numerico_exacto(valor, longitud, permitir_blanco=permitir_blanco):
+        return
+    _add_issue(
+        issues,
+        "LSD-NUM-FORMAT-001",
+        linea=reg["linea"],
+        cuil=reg.get("cuil"),
+        detalle={
+            "tipo": reg["tipo"],
+            "campo": campo,
+            "valor": valor,
+            "longitud": len(valor),
+            "longitud_esperada": longitud,
+            "permite_blanco": permitir_blanco,
+        },
+    )
+
+def _sumar_conceptos(conceptos: list[dict], codigos: set[str]) -> Decimal:
+    total = Decimal("0")
+    for concepto in conceptos:
+        if concepto.get("codigo_concepto", "").strip() not in codigos:
+            continue
+        importe = concepto.get("importe")
+        if importe is None:
+            continue
+        if concepto.get("debito_credito") == "D":
+            total -= importe
+        else:
+            total += importe
+    return total
+
+def _raws_conceptos(conceptos: list[dict], codigos: set[str], limite: int = 20) -> list[dict]:
+    relacionados = []
+    for concepto in conceptos:
+        if concepto.get("codigo_concepto", "").strip() not in codigos:
+            continue
+        relacionados.append({
+            "linea": concepto.get("linea"),
+            "codigo": concepto.get("codigo_concepto", ""),
+            "importe": concepto.get("importe_raw", ""),
+            "debito_credito": concepto.get("debito_credito", ""),
+            "raw": concepto.get("raw", ""),
+        })
+        if len(relacionados) >= limite:
+            break
+    return relacionados
+
+def _construir_analisis(ruta: str) -> dict:
+    lineas = _leer_lineas(ruta)
+    registros = []
+    by_type: dict[str, list[dict]] = defaultdict(list)
+    empleados: dict[str, dict] = {}
+    conceptos_por_cuil: dict[str, list[dict]] = defaultdict(list)
+    bases_por_cuil: dict[str, list[dict]] = defaultdict(list)
+    eventuales_por_cuil: dict[str, list[dict]] = defaultdict(list)
+
+    for nro, linea in enumerate(lineas, 1):
+        if not linea.strip():
+            continue
+        reg = parse_registro(linea, nro)
+        registros.append(reg)
+        by_type[reg["tipo"]].append(reg)
+        cuil = reg.get("cuil")
+        if reg["tipo"] == "02" and cuil:
+            empleados[cuil] = reg
+        elif reg["tipo"] == "03" and cuil:
+            conceptos_por_cuil[cuil].append(reg)
+        elif reg["tipo"] == "04" and cuil:
+            bases_por_cuil[cuil].append(reg)
+        elif reg["tipo"] == "05" and cuil:
+            eventuales_por_cuil[cuil].append(reg)
+
+    analisis = {
+        "ruta": os.path.abspath(ruta),
+        "size_bytes": os.path.getsize(ruta),
+        "total_lineas": len(lineas),
+        "lineas_vacias": sum(1 for l in lineas if not l.strip()),
+        "registros": registros,
+        "by_type": dict(by_type),
+        "empleados": empleados,
+        "conceptos_por_cuil": dict(conceptos_por_cuil),
+        "bases_por_cuil": dict(bases_por_cuil),
+        "eventuales_por_cuil": dict(eventuales_por_cuil),
+        "registros_por_tipo": {t: len(v) for t, v in by_type.items()},
+        "issues": [],
+    }
+    analisis["issues"] = ejecutar_reglas_deterministicas(analisis)
+    return analisis
+
+def obtener_analisis_lsd(ruta: str) -> dict:
+    abs_path = os.path.abspath(ruta)
+    stat = os.stat(abs_path)
+    key = (abs_path, stat.st_mtime, stat.st_size)
+    if key not in _ANALISIS_CACHE:
+        _ANALISIS_CACHE.clear()
+        _ANALISIS_CACHE[key] = _construir_analisis(abs_path)
+    return _ANALISIS_CACHE[key]
+
+def _issues(analisis: dict, rule_id: str | None = None) -> list[dict]:
+    if rule_id is None:
+        return analisis.get("issues", [])
+    return [i for i in analisis.get("issues", []) if i.get("id") == rule_id]
+
+def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
+    issues: list[dict] = []
+    by_type = analisis["by_type"]
+    registros = analisis["registros"]
+    reg01s = by_type.get("01", [])
+    reg02s = by_type.get("02", [])
+
+    if len(reg01s) != 1:
+        _add_issue(issues, "LSD-REG01-STRUCT-001", detalle={"cantidad_reg01": len(reg01s)})
+    elif registros and registros[0]["tipo"] != "01":
+        _add_issue(issues, "LSD-REG01-STRUCT-001", detalle={"linea_reg01": reg01s[0]["linea"], "problema": "REG01 no es la primera línea"})
+
+    if not reg02s:
+        _add_issue(issues, "LSD-REG02-STRUCT-001", detalle={"cantidad_reg02": 0})
+
+    cuils_02 = set(analisis["empleados"])
+    for tipo, index_name in (("03", "conceptos_por_cuil"), ("04", "bases_por_cuil"), ("05", "eventuales_por_cuil")):
+        huerfanos = sorted(set(analisis[index_name]) - cuils_02)
+        if huerfanos:
+            _add_issue(issues, "LSD-CUIL-ORPHAN-001", detalle={"tipo": tipo, "cantidad": len(huerfanos), "cuils": huerfanos[:20]})
+
+    desconocidos = sorted(set(by_type) - {"01", "02", "03", "04", "05"})
+    if desconocidos:
+        _add_issue(issues, "LSD-TIPO-UNKNOWN-001", detalle={"tipos": desconocidos})
+
+    if len(reg01s) == 1:
+        declarado = reg01s[0].get("cantidad_reg04")
+        real = len(by_type.get("04", []))
+        if declarado is None or declarado != real:
+            _add_issue(issues, "LSD-REG01-COUNT04-001", detalle={"declarado": declarado, "real": real})
+        periodo = reg01s[0].get("periodo", "")
+        tipo_envio = reg01s[0].get("tipo_envio", "")
+        nro_pres = reg01s[0].get("nro_presentacion", "")
+        errores = []
+        if not re.fullmatch(r'\d{6}', periodo or ''):
+            errores.append("periodo_no_numerico")
+        else:
+            mes = int(periodo[4:6])
+            if not 1 <= mes <= 12:
+                errores.append("mes_invalido")
+        if tipo_envio not in ("SJ", "RE"):
+            errores.append("tipo_envio_invalido")
+        if not re.fullmatch(r'\d{5}', nro_pres or ''):
+            errores.append("nro_presentacion_invalido")
+        if errores:
+            _add_issue(issues, "LSD-REG01-PERIOD-001", detalle={"errores": errores, "periodo": periodo, "tipo_envio": tipo_envio, "nro_presentacion": nro_pres})
+        cuit_emp = reg01s[0].get("cuit_empleador", "")
+        if not _cuit_cuil_valido(cuit_emp):
+            _add_issue(issues, "LSD-REG01-CUIT-001", detalle={"cuit_empleador": cuit_emp})
+        tipo_liq = reg01s[0].get("tipo_liquidacion", "")
+        dias_base = reg01s[0].get("dias_base", "")
+        nro_liq = reg01s[0].get("nro_presentacion", "")
+        errores_liq = []
+        if tipo_envio == "SJ":
+            if tipo_liq not in ("M", "Q", "D", "H"):
+                errores_liq.append("tipo_liquidacion_invalido_para_sj")
+            if dias_base != "30":
+                errores_liq.append("dias_base_debe_ser_30")
+        elif tipo_envio == "RE":
+            if tipo_liq.strip():
+                errores_liq.append("tipo_liquidacion_debe_ir_en_blanco_para_re")
+            if dias_base.strip():
+                errores_liq.append("dias_base_debe_ir_en_blanco_para_re")
+        if not re.fullmatch(r'\d{5}', nro_liq or ''):
+            errores_liq.append("numero_liquidacion_no_numerico")
+        if errores_liq:
+            _add_issue(issues, "LSD-REG01-LIQ-001", detalle={"errores": errores_liq, "tipo_envio": tipo_envio, "tipo_liquidacion": tipo_liq, "dias_base": dias_base, "nro_liquidacion": nro_liq})
+
+    reg02_por_cuil: dict[str, list[dict]] = defaultdict(list)
+    for reg in reg02s:
+        reg02_por_cuil[reg.get("cuil", "")].append(reg)
+    for cuil, regs in reg02_por_cuil.items():
+        if len(regs) > 1:
+            _add_issue(issues, "LSD-REG02-DUP-001", cuil=cuil, detalle={"cantidad_reg02": len(regs), "lineas": [r["linea"] for r in regs]})
+    for reg in reg02s:
+        cuil = reg.get("cuil", "")
+        if not _cuit_cuil_valido(cuil):
+            _add_issue(issues, "LSD-CUIL-FORMAT-001", linea=reg["linea"], cuil=cuil, detalle={"tipo": "02"})
+        forma_pago = reg.get("forma_pago", "")
+        if forma_pago not in ("1", "2", "3"):
+            _add_issue(issues, "LSD-REG02-FORMA-PAGO-001", linea=reg["linea"], cuil=cuil, detalle={"forma_pago": forma_pago})
+        fecha_pago = reg.get("fecha_pago", "")
+        fecha_rubrica = reg.get("fecha_rubrica", "")
+        errores_fecha = []
+        if not _fecha_yyyymmdd_valida(fecha_pago):
+            errores_fecha.append("fecha_pago_invalida")
+        if not _fecha_yyyymmdd_valida(fecha_rubrica, permitir_blanco=True):
+            errores_fecha.append("fecha_rubrica_invalida")
+        if errores_fecha:
+            _add_issue(issues, "LSD-REG02-FECHA-001", linea=reg["linea"], cuil=cuil, detalle={"errores": errores_fecha, "fecha_pago": fecha_pago, "fecha_rubrica": fecha_rubrica})
+
+    for tipo, index_name in (("03", "conceptos_por_cuil"), ("04", "bases_por_cuil"), ("05", "eventuales_por_cuil")):
+        for cuil, regs in analisis[index_name].items():
+            if cuil and not _cuit_cuil_valido(cuil):
+                _add_issue(issues, "LSD-CUIL-FORMAT-001", linea=regs[0]["linea"], cuil=cuil, detalle={"tipo": tipo})
+
+    for cuil, conceptos in analisis["conceptos_por_cuil"].items():
+        if conceptos and not analisis["bases_por_cuil"].get(cuil):
+            _add_issue(issues, "LSD-EMP-INTEGRITY-001", cuil=cuil, detalle={"conceptos": len(conceptos), "bases": 0, "lineas_conceptos": [r["linea"] for r in conceptos[:20]]})
+
+    for reg in registros:
+        req = LONGITUDES_REQUERIDAS.get(reg["tipo"])
+        if not req:
+            continue
+        lon = reg["longitud"]
+        if reg["tipo"] in ("03", "04"):
+            if lon < req:
+                _add_issue(issues, "LSD-LENGTH-001", linea=reg["linea"], cuil=reg.get("cuil"), detalle={"tipo": reg["tipo"], "longitud": lon, "minima": req})
+        elif lon != req:
+            _add_issue(issues, "LSD-LENGTH-001", linea=reg["linea"], cuil=reg.get("cuil"), detalle={"tipo": reg["tipo"], "longitud": lon, "requerida": req})
+
+    for reg in reg01s:
+        raw = reg["raw"]
+        _add_numeric_issue(issues, reg, "cuit_empleador", _slice(raw, 2, 13), 11)
+        _add_numeric_issue(issues, reg, "periodo", _slice(raw, REG01_PERIODO_START, REG01_PERIODO_END), 6)
+        _add_numeric_issue(issues, reg, "nro_presentacion", _slice(raw, 22, 27), 5)
+        _add_numeric_issue(issues, reg, "cantidad_reg04", _slice(raw, REG01_CANT_REG04_START, REG01_CANT_REG04_END), 6)
+        if reg.get("tipo_envio") == "SJ":
+            _add_numeric_issue(issues, reg, "dias_base", _slice(raw, 27, 29), 2)
+        elif reg.get("tipo_envio") == "RE":
+            _add_numeric_issue(issues, reg, "dias_base", _slice(raw, 27, 29), 2, permitir_blanco=True)
+
+    for reg in reg02s:
+        raw = reg["raw"]
+        _add_numeric_issue(issues, reg, "cuil", _slice(raw, 2, 13), 11)
+        _add_numeric_issue(issues, reg, "dias_liquidados", _slice(raw, 95, 98), 3)
+        _add_numeric_issue(issues, reg, "fecha_pago", _slice(raw, 98, 106), 8)
+        _add_numeric_issue(issues, reg, "fecha_rubrica", _slice(raw, 106, 114), 8, permitir_blanco=True)
+
+    for reg in by_type.get("03", []):
+        raw = reg["raw"]
+        _add_numeric_issue(issues, reg, "cantidad", _slice(raw, REG03_CANTIDAD_START, REG03_CANTIDAD_END), 5)
+        _add_numeric_issue(issues, reg, "importe", _slice(raw, REG03_IMP_START, REG03_IMP_END), 15)
+        debito_credito = reg.get("debito_credito", "")
+        if debito_credito not in ("D", "C"):
+            _add_issue(issues, "LSD-REG03-DEB-CRED-001", linea=reg["linea"], cuil=reg.get("cuil"), detalle={"valor": debito_credito})
+        periodo_ajuste = _slice(raw, REG03_PERIODO_AJUSTE_START, REG03_PERIODO_AJUSTE_END)
+        if not _periodo_yyyymm_valido(periodo_ajuste, permitir_blanco=True, permitir_ceros=True):
+            _add_issue(issues, "LSD-REG03-AJUSTE-001", linea=reg["linea"], cuil=reg.get("cuil"), detalle={"periodo_ajuste": periodo_ajuste})
+
+    campos_reg04 = [
+        ("rem_bruta", REG04_REM_BRUTA_START, REG04_REM_BRUTA_END),
+        ("base1", REG04_BASE1_START, REG04_BASE1_END),
+        ("base2", REG04_BASE2_START, REG04_BASE2_END),
+        ("base3", REG04_BASE3_START, REG04_BASE3_END),
+        ("base4", REG04_BASE4_START, REG04_BASE4_END),
+        ("base5", REG04_BASE5_START, REG04_BASE5_END),
+        ("base6", REG04_BASE6_START, REG04_BASE6_END),
+        ("base7", REG04_BASE7_START, REG04_BASE7_END),
+        ("base8", REG04_BASE8_START, REG04_BASE8_END),
+        ("base9", REG04_BASE9_START, REG04_BASE9_END),
+        ("dif_aporte_ss", REG04_DIF_APORTE_SS_START, REG04_DIF_APORTE_SS_END),
+        ("dif_contr_ss", REG04_DIF_CONTR_SS_START, REG04_DIF_CONTR_SS_END),
+        ("base10", REG04_BASE10_START, REG04_BASE10_END),
+        ("importe_detraer", REG04_DETRACCION_START, REG04_DETRACCION_END),
+    ]
+    for reg in by_type.get("04", []):
+        raw = reg["raw"]
+        for campo, start, end in campos_reg04:
+            _add_numeric_issue(issues, reg, campo, _slice(raw, start, end), end - start)
+
+    for reg in by_type.get("05", []):
+        raw = reg["raw"]
+        _add_numeric_issue(issues, reg, "fecha_ingreso", _slice(raw, 23, 31), 8)
+        _add_numeric_issue(issues, reg, "fecha_egreso", _slice(raw, 31, 39), 8, permitir_blanco=True)
+        _add_numeric_issue(issues, reg, "importe", _slice(raw, 39, 54), 15)
+        _add_numeric_issue(issues, reg, "cuit_eventual", _slice(raw, 54, 65), 11)
+
+    for cuil, regs in analisis["bases_por_cuil"].items():
+        if len(regs) > 1:
+            _add_issue(issues, "LSD-REG04-DUP-001", cuil=cuil, detalle={"cantidad_reg04": len(regs), "lineas": [r["linea"] for r in regs]})
+
+    for reg in registros:
+        if reg["tipo"] in ("03", "04"):
+            campos = reg["raw"][13:] if len(reg["raw"]) > 13 else ""
+            if "," in campos:
+                posiciones = [13 + i for i, c in enumerate(campos) if c == ","]
+                _add_issue(issues, "LSD-NUM-COMMA-001", linea=reg["linea"], cuil=reg.get("cuil"), detalle={"tipo": reg["tipo"], "posiciones": posiciones[:10]})
+            if re.search(r'\d[eE][+\-]?\d', campos):
+                _add_issue(issues, "LSD-NUM-SCI-001", linea=reg["linea"], cuil=reg.get("cuil"), detalle={"tipo": reg["tipo"], "extracto": campos[:80]})
+            if "-" in campos:
+                _add_issue(issues, "LSD-NUM-NEG-001", linea=reg["linea"], cuil=reg.get("cuil"), detalle={"tipo": reg["tipo"]})
+
+    for reg in reg02s:
+        cbu = reg.get("cbu", "")
+        cbu_limpio = cbu.strip()
+        forma_pago = reg.get("forma_pago", "")
+        if forma_pago == "3":
+            if len(cbu) != 22 or not cbu.isdigit() or cbu == "0" * 22:
+                _add_issue(issues, "LSD-REG02-CBU-001", linea=reg["linea"], cuil=reg["cuil"], detalle={"forma_pago": forma_pago, "cbu": cbu, "longitud": len(cbu)})
+        elif cbu_limpio and not cbu.isdigit():
+            _add_issue(issues, "LSD-REG02-CBU-001", linea=reg["linea"], cuil=reg["cuil"], detalle={"forma_pago": forma_pago, "cbu": cbu, "problema": "cbu_no_numerico_en_forma_pago_no_bancaria"})
+
+    for reg in by_type.get("04", []):
+        base4 = reg.get("base4")
+        base10 = reg.get("base10")
+        base2 = reg.get("base2")
+        importe_detraer = reg.get("importe_detraer")
+        rem = reg.get("rem_bruta")
+        base1 = reg.get("base1")
+        conceptos = analisis["conceptos_por_cuil"].get(reg["cuil"], [])
+        concepto_0577 = _sumar_conceptos(conceptos, {"0577"})
+        concepto_0448 = _sumar_conceptos(conceptos, {"0448"})
+        conceptos_incremento_no_rem = _sumar_conceptos(conceptos, {"0525", "0535", "0536", "0537", "0538", "0539"})
+        for campo in ("base1", "base2", "base3", "base4", "base5", "base6", "base7", "base8", "base9", "dif_aporte_ss", "dif_contr_ss", "base10", "importe_detraer"):
+            valor = reg.get(campo)
+            if valor is not None and valor < Decimal("0"):
+                _add_issue(issues, "LSD-REG04-BASE-NEG-001", linea=reg["linea"], cuil=reg["cuil"], detalle={"campo": campo, "valor": reg.get(f"{campo}_raw", "")})
+        if base4 == 0 and base10 not in (None, 0):
+            _add_issue(issues, "LSD-REG04-BASE-001", linea=reg["linea"], cuil=reg["cuil"], detalle={"base4": reg["base4_raw"], "base10": reg["base10_raw"]})
+        if rem == 0 and base1 and base1 > 0:
+            _add_issue(issues, "LSD-REG04-REM-001", linea=reg["linea"], cuil=reg["cuil"], detalle={"rem_bruta": reg["rem_bruta_raw"], "base1": reg["base1_raw"], "problema": "rem_bruta_cero_base1_con_valor"})
+        elif rem and base1 and base1 > rem:
+            _add_issue(issues, "LSD-REG04-REM-001", linea=reg["linea"], cuil=reg["cuil"], detalle={"rem_bruta": reg["rem_bruta_raw"], "base1": reg["base1_raw"], "problema": "base1_supera_rem_bruta"})
+        if base2 is not None and base10 is not None and importe_detraer is not None and importe_detraer > Decimal("0"):
+            base10_esperada = max(base2 - importe_detraer, Decimal("0"))
+            if base10 != base10_esperada:
+                _add_issue(
+                    issues,
+                    "LSD-REG04-DETRACCION-001",
+                    linea=reg["linea"],
+                    cuil=reg["cuil"],
+                    detalle={
+                        "base2": reg["base2_raw"],
+                        "importe_detraer": reg["importe_detraer_raw"],
+                        "base10": reg["base10_raw"],
+                        "base10_esperada": str(base10_esperada),
+                    },
+                )
+        if base1 is not None and reg.get("base9") is not None and concepto_0577 > Decimal("0") and reg["base9"] > base1:
+            codigos_relacionados = {"0577"}
+            _add_issue(
+                issues,
+                "LSD-REG04-BASES-CONCEPTOS-001",
+                linea=reg["linea"],
+                cuil=reg["cuil"],
+                detalle={
+                    "patron": "concepto_0577_con_base9_mayor_a_base1",
+                    "concepto_0577": str(concepto_0577),
+                    "base1": reg["base1_raw"],
+                    "base9": reg["base9_raw"],
+                    "conceptos_relacionados": ["0577"],
+                    "posiciones_usadas": {
+                        "REG04 base1": "176-190",
+                        "REG04 base9": "296-310",
+                        "REG03 codigo_concepto": "14-23",
+                        "REG03 importe": "30-44",
+                        "REG03 debito_credito": "45",
+                    },
+                    "raw_reg04": reg.get("raw", ""),
+                    "raw_reg03_relacionados": _raws_conceptos(conceptos, codigos_relacionados),
+                },
+            )
+        if base1 is not None and base1 > Decimal("0") and reg.get("base9") is not None and conceptos_incremento_no_rem > Decimal("0") and reg["base9"] > (base1 * Decimal("2")):
+            codigos_relacionados = {"0525", "0535", "0536", "0537", "0538", "0539"}
+            _add_issue(
+                issues,
+                "LSD-REG04-BASES-CONCEPTOS-001",
+                linea=reg["linea"],
+                cuil=reg["cuil"],
+                detalle={
+                    "patron": "incrementos_no_remunerativos_inflando_base9",
+                    "conceptos_incremento": str(conceptos_incremento_no_rem),
+                    "base1": reg["base1_raw"],
+                    "base4": reg["base4_raw"],
+                    "base5": reg["base5_raw"],
+                    "base9": reg["base9_raw"],
+                    "conceptos_relacionados": ["0525", "0535", "0536", "0537", "0538", "0539"],
+                    "posiciones_usadas": {
+                        "REG04 base1": "176-190",
+                        "REG04 base4": "221-235",
+                        "REG04 base5": "236-250",
+                        "REG04 base9": "296-310",
+                        "REG03 codigo_concepto": "14-23",
+                        "REG03 importe": "30-44",
+                        "REG03 debito_credito": "45",
+                    },
+                    "raw_reg04": reg.get("raw", ""),
+                    "raw_reg03_relacionados": _raws_conceptos(conceptos, codigos_relacionados),
+                },
+            )
+        if rem is not None and reg.get("base9") is not None and concepto_0448 > Decimal("0") and reg["base9"] > rem:
+            codigos_relacionados = {"0448"}
+            _add_issue(
+                issues,
+                "LSD-REG04-BASES-CONCEPTOS-001",
+                linea=reg["linea"],
+                cuil=reg["cuil"],
+                detalle={
+                    "patron": "concepto_0448_sumado_indebidamente_a_base9",
+                    "concepto_0448": str(concepto_0448),
+                    "rem_bruta": reg["rem_bruta_raw"],
+                    "base9": reg["base9_raw"],
+                    "conceptos_relacionados": ["0448"],
+                    "posiciones_usadas": {
+                        "REG04 remuneracion_bruta": "161-175",
+                        "REG04 base9": "296-310",
+                        "REG03 codigo_concepto": "14-23",
+                        "REG03 importe": "30-44",
+                        "REG03 debito_credito": "45",
+                    },
+                    "raw_reg04": reg.get("raw", ""),
+                    "raw_reg03_relacionados": _raws_conceptos(conceptos, codigos_relacionados),
+                },
+            )
+
+    periodo_mes = None
+    if len(reg01s) == 1 and re.fullmatch(r'\d{6}', reg01s[0].get("periodo", "") or ""):
+        periodo_mes = reg01s[0]["periodo"][4:6]
+    for reg in by_type.get("03", []):
+        cod = reg.get("codigo_arca", "")
+        if cod == "5600000":
+            _add_issue(issues, "LSD-REG03-CONCEPTO-001", linea=reg["linea"], cuil=reg["cuil"], detalle={"concepto": cod, "problema": "concepto_5600000"})
+        if periodo_mes and periodo_mes not in ("06", "12") and cod.isdigit():
+            cod_int = int(cod)
+            if 1200000 <= cod_int <= 1299999 and cod != "1200030":
+                _add_issue(issues, "LSD-REG03-SAC-001", linea=reg["linea"], cuil=reg["cuil"], detalle={"concepto": cod, "mes": periodo_mes})
+
+    return issues
+
+def ejecutar_validaciones_deterministicas(ruta: str) -> dict:
+    analisis = obtener_analisis_lsd(ruta)
+    issues = analisis["issues"]
+    criticos = [i for i in issues if i.get("severidad") == "CRITICO"]
+    advertencias = [i for i in issues if i.get("severidad") == "ADVERTENCIA"]
+    return {
+        "ok": not criticos,
+        "ruta": analisis["ruta"],
+        "size_bytes": analisis["size_bytes"],
+        "total_lineas": analisis["total_lineas"],
+        "lineas_vacias": analisis["lineas_vacias"],
+        "registros_por_tipo": analisis["registros_por_tipo"],
+        "indices": {
+            "empleados": len(analisis["empleados"]),
+            "cuils_con_conceptos": len(analisis["conceptos_por_cuil"]),
+            "cuils_con_bases": len(analisis["bases_por_cuil"]),
+            "cuils_con_eventuales": len(analisis["eventuales_por_cuil"]),
+        },
+        "issues": issues,
+        "errores_criticos": len(criticos),
+        "advertencias": len(advertencias),
+        "catalogo_reglas": RULE_CATALOG,
+    }
+
+def _ok_sin_issues(analisis: dict, rule_ids: set[str]) -> bool:
+    return not any(i.get("id") in rule_ids for i in analisis.get("issues", []))
+
+def _detalle_issues(analisis: dict, rule_ids: set[str], limite: int = 30) -> list[dict]:
+    return [i for i in analisis.get("issues", []) if i.get("id") in rule_ids][:limite]
+
+# ---------------------------------------------------------------------------
 # HERRAMIENTAS DE VALIDACIÓN
 # ---------------------------------------------------------------------------
 
 def tool_info_archivo(ruta: str) -> dict:
     try:
-        lineas = _leer_lineas(ruta)
-        conteo: dict[str, int] = defaultdict(int)
-        for l in lineas:
-            if l.strip():
-                conteo[_tipo(l)] += 1
+        analisis = obtener_analisis_lsd(ruta)
         return {
             "ok": True,
-            "ruta": os.path.abspath(ruta),
-            "size_bytes": os.path.getsize(ruta),
-            "total_lineas": len(lineas),
-            "lineas_vacias": sum(1 for l in lineas if not l.strip()),
-            "registros_por_tipo": dict(conteo),
+            "ruta": analisis["ruta"],
+            "size_bytes": analisis["size_bytes"],
+            "total_lineas": analisis["total_lineas"],
+            "lineas_vacias": analisis["lineas_vacias"],
+            "registros_por_tipo": analisis["registros_por_tipo"],
+            "indices": {
+                "empleados": len(analisis["empleados"]),
+                "cuils_con_conceptos": len(analisis["conceptos_por_cuil"]),
+                "cuils_con_bases": len(analisis["bases_por_cuil"]),
+                "cuils_con_eventuales": len(analisis["eventuales_por_cuil"]),
+            },
         }
     except FileNotFoundError:
         return {"ok": False, "error": f"Archivo no encontrado: {ruta}"}
@@ -116,69 +968,25 @@ def tool_info_archivo(ruta: str) -> dict:
 
 def tool_validar_estructura(ruta: str) -> dict:
     try:
-        lineas = _leer_lineas(ruta)
-        errores = []
-        advertencias = []
-        tipos = [_tipo(l) for l in lineas if l.strip()]
-        conteo: dict[str, int] = defaultdict(int)
-        for t in tipos:
-            conteo[t] += 1
-
-        if conteo.get('01', 0) == 0:
-            errores.append("FALTA REG01: el archivo no tiene registro de cabecera (tipo 01).")
-        elif conteo['01'] > 1:
-            errores.append(f"REG01 DUPLICADO: hay {conteo['01']} registros tipo 01, debe haber exactamente 1.")
-        else:
-            primera = next((l for l in lineas if l.strip()), '')
-            if _tipo(primera) != '01':
-                errores.append("REG01 no es la primera línea del archivo.")
-
-        if conteo.get('02', 0) == 0:
-            errores.append("FALTA REG02: no hay registros de empleados (tipo 02).")
-
-        if conteo.get('05', 0) == 0:
-            advertencias.append("FALTA REG05: el archivo no tiene registro de cierre (tipo 05).")
-        elif conteo['05'] > 1:
-            errores.append(f"REG05 DUPLICADO: hay {conteo['05']} registros tipo 05, debe haber exactamente 1.")
-        else:
-            ultima = next((l for l in reversed(lineas) if l.strip()), '')
-            if _tipo(ultima) != '05':
-                advertencias.append("REG05 no es la última línea del archivo.")
-
-        cuils_02: set[str] = set()
-        cuils_03: set[str] = set()
-        cuils_04: set[str] = set()
-        for l in lineas:
-            if not l.strip():
-                continue
-            t = _tipo(l)
-            c = _cuil(l)
-            if t == '02': cuils_02.add(c)
-            elif t == '03': cuils_03.add(c)
-            elif t == '04': cuils_04.add(c)
-
-        huerfanos_03 = cuils_03 - cuils_02
-        huerfanos_04 = cuils_04 - cuils_02
-        if huerfanos_03:
-            errores.append(f"REG03 HUÉRFANOS: {len(huerfanos_03)} CUILs tienen conceptos sin cabecera REG02. Ejemplos: {sorted(huerfanos_03)[:5]}")
-        if huerfanos_04:
-            errores.append(f"REG04 HUÉRFANOS: {len(huerfanos_04)} CUILs tienen bases sin cabecera REG02. Ejemplos: {sorted(huerfanos_04)[:5]}")
-
-        extraños = set(conteo) - {'01', '02', '03', '04', '05'}
-        if extraños:
-            advertencias.append(f"Tipos de registro desconocidos: {sorted(extraños)}")
+        analisis = obtener_analisis_lsd(ruta)
+        rule_ids = {"LSD-REG01-STRUCT-001", "LSD-REG02-STRUCT-001", "LSD-CUIL-ORPHAN-001", "LSD-TIPO-UNKNOWN-001"}
+        detalle = _detalle_issues(analisis, rule_ids)
+        errores = [i for i in detalle if i.get("severidad") == "CRITICO"]
+        advertencias = [i for i in detalle if i.get("severidad") == "ADVERTENCIA"]
 
         return {
-            "ok": len(errores) == 0,
+            "ok": not errores,
             "errores": errores,
             "advertencias": advertencias,
             "resumen": {
-                "reg01": conteo.get('01', 0), "reg02": conteo.get('02', 0),
-                "reg03": conteo.get('03', 0), "reg04": conteo.get('04', 0),
-                "reg05": conteo.get('05', 0),
-                "cuils_unicos_reg02": len(cuils_02),
-                "cuils_unicos_reg03": len(cuils_03),
-                "cuils_unicos_reg04": len(cuils_04),
+                "reg01": analisis["registros_por_tipo"].get('01', 0),
+                "reg02": analisis["registros_por_tipo"].get('02', 0),
+                "reg03": analisis["registros_por_tipo"].get('03', 0),
+                "reg04": analisis["registros_por_tipo"].get('04', 0),
+                "reg05": analisis["registros_por_tipo"].get('05', 0),
+                "cuils_unicos_reg02": len(analisis["empleados"]),
+                "cuils_unicos_reg03": len(analisis["conceptos_por_cuil"]),
+                "cuils_unicos_reg04": len(analisis["bases_por_cuil"]),
             }
         }
     except Exception as e:
@@ -187,22 +995,16 @@ def tool_validar_estructura(ruta: str) -> dict:
 
 def tool_validar_duplicados_reg04(ruta: str) -> dict:
     try:
-        lineas = _leer_lineas(ruta)
-        conteo_por_cuil: dict[str, int] = defaultdict(int)
-        lineas_por_cuil: dict[str, list[int]] = defaultdict(list)
-        for i, l in enumerate(lineas, 1):
-            if l.strip() and _tipo(l) == '04':
-                c = _cuil(l)
-                conteo_por_cuil[c] += 1
-                lineas_por_cuil[c].append(i)
+        analisis = obtener_analisis_lsd(ruta)
+        issues = _detalle_issues(analisis, {"LSD-REG04-DUP-001"})
         duplicados = {
-            c: {"cantidad_reg04": cnt, "en_lineas": lineas_por_cuil[c]}
-            for c, cnt in conteo_por_cuil.items() if cnt > 1
+            i["cuil"]: {"cantidad_reg04": i["detalle"]["cantidad_reg04"], "en_lineas": i["detalle"]["lineas"]}
+            for i in issues
         }
         return {
             "ok": len(duplicados) == 0,
-            "total_reg04": sum(conteo_por_cuil.values()),
-            "cuils_unicos_reg04": len(conteo_por_cuil),
+            "total_reg04": analisis["registros_por_tipo"].get("04", 0),
+            "cuils_unicos_reg04": len(analisis["bases_por_cuil"]),
             "cuils_con_duplicado": len(duplicados),
             "detalle": duplicados,
             "diagnostico": (
@@ -216,19 +1018,8 @@ def tool_validar_duplicados_reg04(ruta: str) -> dict:
 
 def tool_validar_comas_numericos(ruta: str) -> dict:
     try:
-        lineas = _leer_lineas(ruta)
-        afectados = []
-        for i, l in enumerate(lineas, 1):
-            if not l.strip() or _tipo(l) not in ('03', '04'):
-                continue
-            campos_num = l[13:] if len(l) > 13 else ''
-            if ',' in campos_num:
-                posiciones = [j + 13 for j, c in enumerate(campos_num) if c == ',']
-                afectados.append({
-                    "linea": i, "tipo_reg": _tipo(l), "cuil": _cuil(l),
-                    "posiciones_con_coma": posiciones[:10],
-                    "extracto": l[max(0, posiciones[0]-5):posiciones[0]+10] if posiciones else ''
-                })
+        analisis = obtener_analisis_lsd(ruta)
+        afectados = _detalle_issues(analisis, {"LSD-NUM-COMMA-001"}, 50)
         return {
             "ok": len(afectados) == 0,
             "registros_con_coma": len(afectados),
@@ -244,25 +1035,10 @@ def tool_validar_comas_numericos(ruta: str) -> dict:
 
 def tool_validar_bases_reg04(ruta: str) -> dict:
     try:
-        lineas = _leer_lineas(ruta)
-        afectados = []
-        correctos = []
-        registro_corto = 0
-        for i, l in enumerate(lineas, 1):
-            if not l.strip() or _tipo(l) != '04':
-                continue
-            if len(l) <= REG04_BASE10_END:
-                registro_corto += 1
-                continue
-            b4_raw  = l[REG04_BASE4_START:REG04_BASE4_END].strip()
-            b10_raw = l[REG04_BASE10_START:REG04_BASE10_END].strip()
-            def es_num(s): return bool(s) and re.match(r'^-?\d+(\.\d+)?$', s)
-            if es_num(b4_raw) and es_num(b10_raw):
-                b4 = float(b4_raw); b10 = float(b10_raw)
-                if b4 == 0 and b10 != 0:
-                    afectados.append({"linea": i, "cuil": _cuil(l), "base4": b4_raw, "base10": b10_raw, "problema": "Base4=0 / Base10≠0 → probable concepto 560k en lugar de 570k"})
-                elif b4 != 0:
-                    correctos.append(_cuil(l))
+        analisis = obtener_analisis_lsd(ruta)
+        afectados = _detalle_issues(analisis, {"LSD-REG04-BASE-001"})
+        correctos = [r["cuil"] for r in analisis["by_type"].get("04", []) if r.get("base4") not in (None, 0)]
+        registro_corto = sum(1 for r in analisis["by_type"].get("04", []) if r["longitud"] <= REG04_BASE10_END)
         return {
             "ok": len(afectados) == 0,
             "cuils_con_base4_cero_base10_con_valor": len(afectados),
@@ -280,30 +1056,18 @@ def tool_validar_bases_reg04(ruta: str) -> dict:
 
 def tool_validar_cbu(ruta: str) -> dict:
     try:
-        lineas = _leer_lineas(ruta)
-        problemas = []
-        sin_cbu_candidato = 0
-        for i, l in enumerate(lineas, 1):
-            if not l.strip() or _tipo(l) != '04':
-                continue
-            cola = l[-50:] if len(l) > 50 else l[13:]
-            match = re.search(r'\d{20,24}', cola)
-            if match:
-                bloque = match.group(0)
-                if len(bloque) != 22:
-                    problemas.append({"linea": i, "cuil": _cuil(l), "cbu_candidato": bloque, "longitud": len(bloque), "problema": f"CBU tiene {len(bloque)} dígitos, debe tener exactamente 22"})
-            else:
-                if re.search(r'[A-Za-z]', cola):
-                    problemas.append({"linea": i, "cuil": _cuil(l), "cbu_candidato": None, "problema": "Cola del registro contiene letras donde se espera CBU numérico"})
-                else:
-                    sin_cbu_candidato += 1
+        analisis = obtener_analisis_lsd(ruta)
+        problemas = _detalle_issues(analisis, {"LSD-REG02-CBU-001"})
+        forma_pago_3 = sum(1 for r in analisis["by_type"].get("02", []) if r.get("forma_pago") == "3")
+        forma_pago_sin_cbu_obligatorio = sum(1 for r in analisis["by_type"].get("02", []) if r.get("forma_pago") != "3")
         return {
             "ok": len(problemas) == 0,
-            "total_reg04": sum(1 for l in lineas if l.strip() and _tipo(l) == '04'),
-            "reg04_con_problema_cbu": len(problemas),
-            "reg04_sin_cbu_candidato": sin_cbu_candidato,
+            "total_reg02": analisis["registros_por_tipo"].get("02", 0),
+            "reg02_forma_pago_3": forma_pago_3,
+            "reg02_sin_cbu_obligatorio": forma_pago_sin_cbu_obligatorio,
+            "reg02_con_problema_cbu": len(problemas),
             "detalle": problemas[:30],
-            "diagnostico": ("PROBLEMA CBU: Hay REG04 con CBU de longitud incorrecta. Debe ser exactamente 22 dígitos." if problemas else "Sin problemas de CBU. OK.")
+            "diagnostico": ("PROBLEMA CBU: Hay REG02 con CBU inválido según forma de pago." if problemas else "Sin problemas de CBU. OK.")
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -311,15 +1075,13 @@ def tool_validar_cbu(ruta: str) -> dict:
 
 def tool_analizar_conceptos_reg03(ruta: str) -> dict:
     try:
-        lineas = _leer_lineas(ruta)
+        analisis = obtener_analisis_lsd(ruta)
         conteo: dict[str, int] = defaultdict(int)
         cuils_por_cod: dict[str, set] = defaultdict(set)
-        for l in lineas:
-            if not l.strip() or _tipo(l) != '03':
-                continue
-            if len(l) >= REG03_COD_END:
-                cod = l[REG03_COD_START:REG03_COD_END].strip()
-                cuils_por_cod[cod].add(_cuil(l))
+        for cuil, regs in analisis["conceptos_por_cuil"].items():
+            for reg in regs:
+                cod = reg.get("codigo_arca", "")
+                cuils_por_cod[cod].add(cuil)
                 conteo[cod] += 1
         OBSOLETOS = {'5600000': 'Rango libre No Remunerativos Especiales → REEMPLAZAR por 570.000'}
         GUIA45 = {
@@ -357,19 +1119,12 @@ def tool_validar_conteo_reg04_en_reg01(ruta: str) -> dict:
     Ref: Ingreso-liq-La-cantidad-de-registros-04-informados-en-el-registro-01-X-no-coincide-con-los-encontrados-Y.pdf
     """
     try:
-        lineas = _leer_lineas(ruta)
-        reg01 = next((l for l in lineas if l.strip() and _tipo(l) == '01'), None)
-        if not reg01:
+        analisis = obtener_analisis_lsd(ruta)
+        reg01s = analisis["by_type"].get("01", [])
+        if not reg01s:
             return {"ok": False, "error": "No se encontró REG01.", "diagnostico": "FALTA REG01."}
-        if len(reg01) < REG01_CANT_REG04_END:
-            return {"ok": False, "error": f"REG01 demasiado corto ({len(reg01)} chars) para leer cantidad REG04.",
-                    "diagnostico": "REG01 incompleto."}
-        raw = reg01[REG01_CANT_REG04_START:REG01_CANT_REG04_END].strip()
-        if not raw.isdigit():
-            return {"ok": False, "error": f"Campo cantidad REG04 en REG01 no numérico: '{raw}'",
-                    "diagnostico": "REG01 mal formado: campo cantidad de REG04 tiene caracteres no numéricos."}
-        cant_declarada = int(raw)
-        cant_real = sum(1 for l in lineas if l.strip() and _tipo(l) == '04')
+        cant_declarada = reg01s[0].get("cantidad_reg04")
+        cant_real = analisis["registros_por_tipo"].get("04", 0)
         ok = cant_declarada == cant_real
         return {
             "ok": ok,
@@ -393,33 +1148,8 @@ def tool_validar_longitud_registros(ruta: str) -> dict:
     Longitudes: REG01=35, REG02=115, REG03≥51, REG04≥370, REG05=65
     """
     try:
-        lineas = _leer_lineas(ruta)
-        errores = []
-        for i, l in enumerate(lineas, 1):
-            if not l.strip():
-                continue
-            t = _tipo(l)
-            if t not in LONGITUDES_REQUERIDAS:
-                continue
-            lon = len(l)
-            req = LONGITUDES_REQUERIDAS[t]
-            # REG03: el sufijo ".e-s" agrega 4 chars → toleramos hasta req+4
-            if t == '03':
-                if lon < req:
-                    errores.append({"linea": i, "tipo": t, "cuil": _cuil(l),
-                                    "longitud_real": lon, "longitud_requerida": req, "deficit": req - lon})
-                continue
-            # REG04: longitud mínima (el CBU puede extenderlo)
-            if t == '04':
-                if lon < req:
-                    errores.append({"linea": i, "tipo": t, "cuil": _cuil(l),
-                                    "longitud_real": lon, "longitud_requerida": req, "deficit": req - lon})
-                continue
-            # REG01, REG02, REG05: longitud exacta
-            if lon != req:
-                errores.append({"linea": i, "tipo": t,
-                                 "cuil": _cuil(l) if t == '02' else 'N/A',
-                                 "longitud_real": lon, "longitud_requerida": req, "deficit": req - lon})
+        analisis = obtener_analisis_lsd(ruta)
+        errores = _detalle_issues(analisis, {"LSD-LENGTH-001"})
         return {
             "ok": len(errores) == 0,
             "registros_longitud_incorrecta": len(errores),
@@ -441,28 +1171,8 @@ def tool_validar_valores_negativos(ruta: str) -> dict:
     Ref: Generación-F931_valores_negativos.pdf
     """
     try:
-        lineas = _leer_lineas(ruta)
-        afectados = []
-        for i, l in enumerate(lineas, 1):
-            if not l.strip():
-                continue
-            t = _tipo(l)
-            if t == '03' and len(l) >= REG03_IMP_END:
-                seg = l[REG03_IMP_START:REG03_IMP_END].strip()
-                if seg.startswith('-'):
-                    afectados.append({"linea": i, "tipo": "REG03", "cuil": _cuil(l),
-                                      "concepto": l[REG03_COD_START:REG03_COD_END].strip(),
-                                      "valor": seg})
-            elif t == '04' and len(l) > 13:
-                parte = l[13:]
-                pos = 0
-                while pos + 15 <= len(parte):
-                    seg = parte[pos:pos+15].strip()
-                    if seg.startswith('-'):
-                        afectados.append({"linea": i, "tipo": "REG04", "cuil": _cuil(l),
-                                          "posicion_absoluta": 13 + pos, "valor": seg})
-                        break
-                    pos += 15
+        analisis = obtener_analisis_lsd(ruta)
+        afectados = _detalle_issues(analisis, {"LSD-NUM-NEG-001"})
         return {
             "ok": len(afectados) == 0,
             "registros_con_negativo": len(afectados),
@@ -484,16 +1194,8 @@ def tool_validar_notacion_cientifica(ruta: str) -> dict:
     Ref: Bug H documentado — BUG-H_Rem_total_notacion_cientifica
     """
     try:
-        lineas = _leer_lineas(ruta)
-        afectados = []
-        patron = re.compile(r'\d[eE][+\-]?\d')
-        for i, l in enumerate(lineas, 1):
-            if not l.strip() or _tipo(l) not in ('03', '04'):
-                continue
-            parte = l[13:] if len(l) > 13 else ''
-            if patron.search(parte):
-                afectados.append({"linea": i, "tipo": _tipo(l), "cuil": _cuil(l),
-                                   "extracto": parte[:60]})
+        analisis = obtener_analisis_lsd(ruta)
+        afectados = _detalle_issues(analisis, {"LSD-NUM-SCI-001"})
         return {
             "ok": len(afectados) == 0,
             "registros_con_notacion_cientifica": len(afectados),
@@ -516,32 +1218,16 @@ def tool_validar_sac_fuera_de_periodo(ruta: str) -> dict:
     Ref: Validar-Liq-Cnp-SAC.pdf, Validar-Liq-No-corresponde-informar-simultaneamente-SAC-semest.pdf
     """
     try:
-        lineas = _leer_lineas(ruta)
-        reg01 = next((l for l in lineas if l.strip() and _tipo(l) == '01'), None)
-        periodo_mes = None
-        periodo_str = None
-        if reg01 and len(reg01) >= REG01_PERIODO_END:
-            periodo_str = reg01[REG01_PERIODO_START:REG01_PERIODO_END]
-            if periodo_str.isdigit():
-                periodo_mes = periodo_str[4:6]
+        analisis = obtener_analisis_lsd(ruta)
+        reg01s = analisis["by_type"].get("01", [])
+        periodo_str = reg01s[0].get("periodo") if reg01s else None
+        periodo_mes = periodo_str[4:6] if periodo_str and periodo_str.isdigit() else None
         if not periodo_mes:
             return {"ok": True, "advertencia": "No se pudo leer el mes del período desde REG01. Validación omitida."}
         if periodo_mes in ('06', '12'):
             return {"ok": True, "periodo": periodo_str, "mes": periodo_mes,
                     "diagnostico": f"Mes {periodo_mes} es de SAC — conceptos SAC semestrales permitidos."}
-        afectados = []
-        for i, l in enumerate(lineas, 1):
-            if not l.strip() or _tipo(l) != '03' or len(l) < REG03_COD_END:
-                continue
-            cod = l[REG03_COD_START:REG03_COD_END].strip()
-            if not cod.isdigit():
-                continue
-            cod_int = int(cod)
-            # Rango 120.000-129.999 → códigos 1200000-1299999 (×10 pattern del sistema)
-            # Excepto 120.003 (SAC proporcional) → código 1200030, permitido siempre
-            if 1200000 <= cod_int <= 1299999 and cod != '1200030':
-                afectados.append({"linea": i, "cuil": _cuil(l), "concepto": cod,
-                                   "problema": f"SAC semestral en mes {periodo_mes} — solo permitido en mes 06 y 12"})
+        afectados = _detalle_issues(analisis, {"LSD-REG03-SAC-001"})
         return {
             "ok": len(afectados) == 0,
             "periodo": periodo_str,
@@ -565,33 +1251,16 @@ def tool_validar_periodo_reg01(ruta: str) -> dict:
     Ref: Ingreso-liq-La-linea-1-nro-liq.pdf, Ingreso-liq-periodo_obligacion.pdf
     """
     try:
-        lineas = _leer_lineas(ruta)
-        reg01 = next((l for l in lineas if l.strip() and _tipo(l) == '01'), None)
-        if not reg01:
+        analisis = obtener_analisis_lsd(ruta)
+        reg01s = analisis["by_type"].get("01", [])
+        if not reg01s:
             return {"ok": False, "error": "No se encontró REG01.", "diagnostico": "FALTA REG01."}
-        if len(reg01) < REG01_PERIODO_END:
-            return {"ok": False,
-                    "error": f"REG01 demasiado corto ({len(reg01)} chars).",
-                    "diagnostico": "REG01 incompleto: no se puede leer el período."}
-        periodo   = reg01[REG01_PERIODO_START:REG01_PERIODO_END]
-        tipo_envio       = reg01[13:15]   if len(reg01) >= 15  else '??'
-        nro_presentacion = reg01[22:27]   if len(reg01) >= 27  else '?????'
-        cuit_empleador   = reg01[2:13]    if len(reg01) >= 13  else '???????????'
-        errores = []
-        if not periodo.isdigit():
-            errores.append(f"Período '{periodo}' no numérico")
-        else:
-            anio, mes = int(periodo[:4]), int(periodo[4:])
-            if not (1 <= mes <= 12):
-                errores.append(f"Mes '{periodo[4:]}' inválido (debe ser 01-12)")
-            if anio < 2020:
-                errores.append(f"Año '{periodo[:4]}' anterior a 2020 — posible error")
-            if anio > 2030:
-                errores.append(f"Año '{periodo[:4]}' mayor a 2030 — posible error")
-        if tipo_envio not in ('SJ', 'RE'):
-            errores.append(f"Tipo de envío '{tipo_envio}' inválido (debe ser 'SJ' o 'RE')")
-        if not nro_presentacion.isdigit():
-            errores.append(f"N° de presentación '{nro_presentacion}' no numérico")
+        reg01 = reg01s[0]
+        periodo = reg01.get("periodo", "")
+        tipo_envio = reg01.get("tipo_envio", "")
+        nro_presentacion = reg01.get("nro_presentacion", "")
+        cuit_empleador = reg01.get("cuit_empleador", "")
+        errores = _detalle_issues(analisis, {"LSD-REG01-PERIOD-001"})
         return {
             "ok": len(errores) == 0,
             "periodo": periodo,
@@ -609,6 +1278,54 @@ def tool_validar_periodo_reg01(ruta: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def tool_validar_reg01_completo(ruta: str) -> dict:
+    try:
+        analisis = obtener_analisis_lsd(ruta)
+        rule_ids = {"LSD-REG01-STRUCT-001", "LSD-REG01-COUNT04-001", "LSD-REG01-PERIOD-001", "LSD-REG01-CUIT-001", "LSD-REG01-LIQ-001"}
+        issues = _detalle_issues(analisis, rule_ids)
+        reg01s = analisis["by_type"].get("01", [])
+        reg01 = reg01s[0] if reg01s else {}
+        return {
+            "ok": not any(i.get("severidad") == "CRITICO" for i in issues),
+            "reg01": {
+                "cuit_empleador": reg01.get("cuit_empleador"),
+                "tipo_envio": reg01.get("tipo_envio"),
+                "periodo": reg01.get("periodo"),
+                "tipo_liquidacion": reg01.get("tipo_liquidacion"),
+                "nro_presentacion": reg01.get("nro_presentacion"),
+                "dias_base": reg01.get("dias_base"),
+                "cantidad_reg04": reg01.get("cantidad_reg04"),
+                "reg04_reales": analisis["registros_por_tipo"].get("04", 0),
+            },
+            "issues": issues,
+            "diagnostico": "REG01 válido según layout y contenido real. OK." if not issues else "REG01 tiene inconsistencias determinísticas."
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def tool_validar_integridad_empleados(ruta: str) -> dict:
+    try:
+        analisis = obtener_analisis_lsd(ruta)
+        rule_ids = {
+            "LSD-CUIL-ORPHAN-001", "LSD-CUIL-FORMAT-001", "LSD-REG02-DUP-001",
+            "LSD-EMP-INTEGRITY-001", "LSD-REG02-FECHA-001",
+            "LSD-REG02-FORMA-PAGO-001", "LSD-REG02-CBU-001", "LSD-REG04-DUP-001",
+        }
+        issues = _detalle_issues(analisis, rule_ids, 100)
+        return {
+            "ok": not any(i.get("severidad") == "CRITICO" for i in issues),
+            "empleados_reg02": len(analisis["empleados"]),
+            "cuils_con_conceptos": len(analisis["conceptos_por_cuil"]),
+            "cuils_con_bases": len(analisis["bases_por_cuil"]),
+            "cuils_con_eventuales": len(analisis["eventuales_por_cuil"]),
+            "issues": issues,
+            "diagnostico": "Integridad por empleado correcta. OK." if not issues else "Hay problemas de integridad por empleado."
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def tool_validar_rem_bruta_reg04(ruta: str) -> dict:
     """
     VAL-05 — Verifica coherencia entre Rem. Bruta (pos 161-175) y Base 1 (pos 176-190) en REG04.
@@ -616,26 +1333,8 @@ def tool_validar_rem_bruta_reg04(ruta: str) -> dict:
     Ref: Validar-Liq-Dif_calculo_rem.pdf, ticket #27571 (Base Imponible > Remuneración Bruta)
     """
     try:
-        lineas = _leer_lineas(ruta)
-        afectados = []
-        for i, l in enumerate(lineas, 1):
-            if not l.strip() or _tipo(l) != '04' or len(l) < REG04_BASE1_END:
-                continue
-            try:
-                rem   = float(l[REG04_REM_BRUTA_START:REG04_REM_BRUTA_END].strip() or '0')
-                base1 = float(l[REG04_BASE1_START:REG04_BASE1_END].strip() or '0')
-            except ValueError:
-                continue
-            if rem == 0 and base1 > 0:
-                afectados.append({"linea": i, "cuil": _cuil(l),
-                                   "rem_bruta": l[REG04_REM_BRUTA_START:REG04_REM_BRUTA_END].strip(),
-                                   "base1": l[REG04_BASE1_START:REG04_BASE1_END].strip(),
-                                   "problema": "Rem. Bruta = 0 pero Base 1 SIPA ≠ 0 (error de exportación)"})
-            elif base1 > rem > 0:
-                afectados.append({"linea": i, "cuil": _cuil(l),
-                                   "rem_bruta": l[REG04_REM_BRUTA_START:REG04_REM_BRUTA_END].strip(),
-                                   "base1": l[REG04_BASE1_START:REG04_BASE1_END].strip(),
-                                   "problema": "Base 1 SIPA > Rem. Bruta — la base no puede superar la remuneración"})
+        analisis = obtener_analisis_lsd(ruta)
+        afectados = _detalle_issues(analisis, {"LSD-REG04-REM-001"})
         return {
             "ok": len(afectados) == 0,
             "reg04_con_problema_rem_bruta": len(afectados),
@@ -670,17 +1369,19 @@ def _tool_def(name: str, description: str) -> gtypes.FunctionDeclaration:
 
 TOOL_DECLARATIONS = [
     _tool_def("info_archivo",                    "Obtiene información básica del archivo LSD: tamaño, líneas totales y distribución de registros por tipo (REG01 a REG05). Llamar primero."),
-    _tool_def("validar_estructura",              "Valida la estructura: exactamente 1 REG01 y 1 REG05, que todo CUIL en REG03/REG04 tenga su REG02, y que no haya tipos desconocidos."),
+    _tool_def("validar_estructura",              "Valida la estructura: exactamente 1 REG01, existencia de REG02, que todo CUIL en REG03/REG04/REG05 tenga su REG02, y que no haya tipos desconocidos. REG05 corresponde a trabajadores eventuales y puede no existir."),
     _tool_def("validar_periodo_reg01",           "VAL-09: Valida que el período en REG01 (pos 16-21) sea AAAAMM válido, y verifica tipo de envío y N° de presentación."),
+    _tool_def("validar_reg01_completo",          "Valida REG01 contra el layout oficial: CUIT empleador, período, tipo de envío, tipo de liquidación, número, días base y conteo REG04 real."),
     _tool_def("validar_conteo_reg04_en_reg01",   "VAL-01: Verifica que la cantidad de REG04 declarada en REG01 (pos 30-35) coincida exactamente con los REG04 reales. ARCA rechaza si difieren."),
     _tool_def("validar_longitud_registros",      "VAL-02: Verifica que cada línea tenga la longitud exacta de su tipo (REG01=35, REG02=115, REG03≥51, REG04≥370, REG05=65). ARCA rechaza longitudes incorrectas."),
+    _tool_def("validar_integridad_empleados",    "Valida integridad por CUIL: REG02 existente, CUIL válido, conceptos con bases, duplicados, forma de pago, CBU y fechas."),
     _tool_def("validar_duplicados_reg04",        "Detecta Bug A: CUILs con más de un REG04 (empleado con dos legajos activos). ARCA suma todos → bases duplicadas (ratio 2,0x)."),
     _tool_def("validar_comas_numericos",         "Detecta Bug B (#30999): comas en campos numéricos de REG03/REG04. Formato correcto para ARCA es punto decimal sin separador de miles."),
     _tool_def("validar_valores_negativos",       "VAL-03: Detecta valores negativos en campos monetarios de REG03/REG04. El LSD no admite negativos; los descuentos se expresan con flag D/C."),
     _tool_def("validar_notacion_cientifica",     "VAL-06: Detecta notación científica (1.0E7) en campos numéricos. Bug H: ocurre cuando Rem. Total > $10.000.000. ARCA no puede parsear ese formato."),
     _tool_def("validar_bases_reg04",             "Detecta Bug C (Guía N°45): REG04 con Base4=0 y Base10 con valor → concepto 560.000 en lugar de 570.000 para docentes No-SIPA."),
     _tool_def("validar_rem_bruta_reg04",         "VAL-05: Verifica coherencia entre Rem. Bruta (pos 161-175) y Base 1 SIPA (pos 176-190) en REG04. La base no puede superar la remuneración."),
-    _tool_def("validar_cbu",                     "Detecta CBU con formato incorrecto en REG04. Debe ser exactamente 22 dígitos numéricos."),
+    _tool_def("validar_cbu",                     "Detecta CBU con formato incorrecto en REG02 posiciones 74-95. Es obligatorio y numérico de 22 dígitos cuando forma de pago es 3."),
     _tool_def("analizar_conceptos_reg03",        "Analiza conceptos ARCA en REG03: top-10, detección del concepto obsoleto 560.000 (Guía 45), conceptos presentes/faltantes."),
     _tool_def("validar_sac_fuera_de_periodo",    "VAL-07: Detecta conceptos SAC semestrales (120.000-129.999 excl. 120.003) en meses distintos de junio y diciembre. ARCA los rechaza."),
 ]
@@ -689,8 +1390,10 @@ TOOL_FUNCTIONS = {
     "info_archivo":                  tool_info_archivo,
     "validar_estructura":            tool_validar_estructura,
     "validar_periodo_reg01":         tool_validar_periodo_reg01,
+    "validar_reg01_completo":        tool_validar_reg01_completo,
     "validar_conteo_reg04_en_reg01": tool_validar_conteo_reg04_en_reg01,
     "validar_longitud_registros":    tool_validar_longitud_registros,
+    "validar_integridad_empleados":  tool_validar_integridad_empleados,
     "validar_duplicados_reg04":      tool_validar_duplicados_reg04,
     "validar_comas_numericos":       tool_validar_comas_numericos,
     "validar_valores_negativos":     tool_validar_valores_negativos,
@@ -911,20 +1614,24 @@ El LSD es un archivo de texto de ancho fijo con los siguientes tipos de registro
   REG02 — Cabecera por empleado (1 por CUIL, aunque tenga múltiples legajos)
            Posición 2-12: CUIL del empleado (11 dígitos)
            Contiene: nombre, CUIL, CBU, forma de pago, tipo de empresa, etc.
+           Posición 74-95: CBU (22 caracteres). Obligatorio numérico si forma de pago = 3.
+           Posición 115: forma de pago (1=efectivo, 2=cheque, 3=acreditación en cuenta).
 
   REG03 — Conceptos remunerativos (N por empleado)
            Posición 2-12:  CUIL
-           Posición 13-19: código ARCA (7 dígitos, ej: 5600000 = concepto 560.000)
-           Posición 20-35: importe (punto decimal, sin separador de miles)
-           Sufijo: ".e-s" al final de cada REG03 (identificador del sistema e-SUELDOS)
+           Posición 14-23: código de concepto del empleador (10 caracteres)
+           Posición 24-28: cantidad
+           Posición 29: unidad
+           Posición 30-44: importe (13 enteros y 2 decimales, sin separadores)
+           Posición 45: débito/crédito (D/C)
+           Posición 46-51: período de ajuste AAAAMM o 000000
 
   REG04 — Bases imponibles por empleado (normalmente 1 por CUIL)
            Posición 2-12:  CUIL
            Posición ~220-234: Base 4 (aportes OS/FSR) — topeada con maxModPre
            Posición ~340-354: Base 10 = Rem10 (Ley 27.430) — Base2 - ImporteDetraccion
-           Final del registro: CBU (22 dígitos) + Forma de pago
 
-  REG05 — Registro de cierre/totales (exactamente 1, última línea)
+  REG05 — Trabajadores Eventuales (0..N registros, solo si corresponde)
 
 Los campos numéricos NO deben contener comas; el formato correcto es punto decimal
 sin separador de miles: "1000.50" (no "1.000,50").
