@@ -285,7 +285,7 @@ def _informe_basico_deterministico(validacion: dict, arca_contexto: dict | None 
                 },
             ],
             "diagnostico_cruce": "",
-            "diferencias_por_cuil": [],
+            "diferencias_por_cuil": _diferencias_desde_issues(items),
             "detalle_tecnico": _detalle_tecnico_problema(rule_id, items),
         })
 
@@ -349,6 +349,30 @@ def _detalle_tecnico_problema(rule_id: str, items: list[dict], limite: int = 30)
     }
 
 
+def _diferencias_desde_issues(items: list[dict]) -> list[dict]:
+    diferencias = []
+    for item in items:
+        detalle = item.get("detalle") or {}
+        if not any(k in detalle for k in ("informado", "determinado", "diferencia", "base")):
+            continue
+        diferencias.append({
+            "legajo": detalle.get("legajo") or "—",
+            "cuil": item.get("cuil") or "—",
+            "base": detalle.get("base") or "—",
+            "informado": detalle.get("informado") or "—",
+            "determinado": detalle.get("determinado") or "—",
+            "diferencia": detalle.get("diferencia") or "—",
+        })
+    return diferencias
+
+
+def _fila_diferencia_util(fila: dict) -> bool:
+    return any(
+        fila.get(k) not in (None, "", "—")
+        for k in ("legajo", "base", "informado", "determinado", "diferencia")
+    )
+
+
 def _adjuntar_detalle_tecnico(informe: dict, validacion: dict) -> dict:
     issues = validacion.get("issues", [])
     agrupados: dict[str, list[dict]] = defaultdict(list)
@@ -358,6 +382,9 @@ def _adjuntar_detalle_tecnico(informe: dict, validacion: dict) -> dict:
         rule_id = problema.get("id")
         if rule_id and rule_id in agrupados:
             problema["detalle_tecnico"] = _detalle_tecnico_problema(rule_id, agrupados[rule_id])
+            filas_actuales = problema.get("diferencias_por_cuil") or []
+            if not filas_actuales or not any(_fila_diferencia_util(f) for f in filas_actuales):
+                problema["diferencias_por_cuil"] = _diferencias_desde_issues(agrupados[rule_id])
     return informe
 
 

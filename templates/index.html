@@ -45,6 +45,10 @@
           <span>Historial</span>
           <span id="hist-count"></span>
         </button>
+        <button class="tab-btn" data-tab="frecuentes" role="tab" aria-selected="false">
+          <span class="tab-ico top-ico" aria-hidden="true">10</span>
+          <span>Errores frecuentes</span>
+        </button>
       </nav>
     </aside>
 
@@ -145,12 +149,153 @@
           <div class="stat"><div class="stat-v a" id="s-adv">—</div><div class="stat-l">Advertencias</div></div>
         </div>
         <div class="resumen" id="resumen"></div>
+        <section class="health-panel" id="health-panel">
+          <div class="health-chart" id="health-chart" aria-label="Distribución del análisis">
+            <div class="health-chart-inner">
+              <strong id="health-total">—</strong>
+              <span>empleados</span>
+            </div>
+          </div>
+          <div class="health-info">
+            <div class="sec-t">Estado general del archivo</div>
+            <div class="health-legend">
+              <span><i class="h-ok"></i><strong id="h-ok">0</strong> validados</span>
+              <span><i class="h-crit"></i><strong id="h-crit">0</strong> con error crítico</span>
+              <span><i class="h-warn"></i><strong id="h-warn">0</strong> advertencias</span>
+            </div>
+          </div>
+        </section>
         <div id="probs-cont">
           <div class="sec-t" id="probs-titulo"></div>
           <div id="probs-lista"></div>
         </div>
         <button id="btn-nueva">← Analizar otro archivo</button>
       </section>
+        </main>
+      </div>
+
+      <!-- ══ TAB: ERRORES FRECUENTES ══ -->
+      <div class="tab-panel" id="tab-frecuentes">
+        <main>
+          <div class="te-header">
+            <div>
+              <h2>Errores frecuentes LSD</h2>
+              <p>Guía rápida para consultas, diagnóstico y explicación al cliente.</p>
+            </div>
+            <span class="te-badge">Drill-down consultor</span>
+          </div>
+          <div id="te-lista">
+            <div class="te-card critico">
+              <div class="te-card-head">
+                <span class="te-rank">01</span><span class="te-icono">!</span>
+                <div class="te-card-head-txt"><div class="te-titulo">Relación laboral no vigente</div><div class="te-desc">ARCA no encuentra una relación activa para el CUIL.</div></div>
+                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Alta temprana, fecha de ingreso/egreso, CUIT empleador y CUIL del trabajador en Simplificación Registral.</div></div>
+                <div class="te-sol-box">Corregir la relación laboral o fechas registrales y volver a exportar el LSD.</div>
+              </div>
+            </div>
+            <div class="te-card critico">
+              <div class="te-card-head">
+                <span class="te-rank">02</span><span class="te-icono">BI</span>
+                <div class="te-card-head-txt"><div class="te-titulo">Bases imponibles diferentes</div><div class="te-desc">REG04 informa bases que no coinciden con lo calculado por ARCA.</div></div>
+                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Conceptos REG03, parametrización de bases, detracción, topes y conceptos no remunerativos que impactan Base 1, 4, 5 o 9.</div></div>
+                <div class="te-sol-box">Revisar impacto de conceptos, recalcular liquidación y regenerar REG04.</div>
+              </div>
+            </div>
+            <div class="te-card critico">
+              <div class="te-card-head">
+                <span class="te-rank">03</span><span class="te-icono">%</span>
+                <div class="te-card-head-txt"><div class="te-titulo">Aportes SS/OS mal calculados</div><div class="te-desc">El porcentaje aplicado no corresponde a la base imponible declarada.</div></div>
+                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Obra social, sindicato, modalidad, bases topeadas, aportes adicionales y configuración del concepto.</div></div>
+                <div class="te-sol-box">Actualizar parámetros de aportes/contribuciones y recalcular.</div>
+              </div>
+            </div>
+            <div class="te-card critico">
+              <div class="te-card-head">
+                <span class="te-rank">04</span><span class="te-icono">C</span>
+                <div class="te-card-head-txt"><div class="te-titulo">Concepto no parametrizado</div><div class="te-desc">El concepto informado no tiene equivalencia o tratamiento válido para LSD.</div></div>
+                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Código de concepto, equivalencia ARCA, signo D/C, unidad, cantidad e impacto en subsistemas.</div></div>
+                <div class="te-sol-box">Parametrizar el concepto y volver a generar REG03.</div>
+              </div>
+            </div>
+            <div class="te-card critico">
+              <div class="te-card-head">
+                <span class="te-rank">05</span><span class="te-icono">REQ</span>
+                <div class="te-card-head-txt"><div class="te-titulo">Datos obligatorios faltantes</div><div class="te-desc">Faltan campos requeridos en REG01, REG02, REG03 o REG04.</div></div>
+                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">CUIT/CUIL, período, cantidad de REG04, fecha de pago, forma de pago, días liquidados y bases.</div></div>
+                <div class="te-sol-box">Completar datos de empresa/empleado/liquidación y exportar otra vez.</div>
+              </div>
+            </div>
+            <div class="te-card critico">
+              <div class="te-card-head">
+                <span class="te-rank">06</span><span class="te-icono">RB</span>
+                <div class="te-card-head-txt"><div class="te-titulo">Remuneración bruta incoherente</div><div class="te-desc">La remuneración bruta o Base 1 no es consistente con los conceptos REG03.</div></div>
+                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Conceptos remunerativos, descuentos, SAC, vacaciones, licencias y topes de base imponible.</div></div>
+                <div class="te-sol-box">Recalcular acumuladores de la liquidación y validar REG04.</div>
+              </div>
+            </div>
+            <div class="te-card critico">
+              <div class="te-card-head">
+                <span class="te-rank">07</span><span class="te-icono">DUP</span>
+                <div class="te-card-head-txt"><div class="te-titulo">REG04 duplicado por CUIL</div><div class="te-desc">Un empleado con más de un legajo puede generar bases duplicadas.</div></div>
+                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Multi-legajo, consolidación por CUIL, acumulación de bases y días trabajados.</div></div>
+                <div class="te-sol-box">Consolidar un solo REG04 por CUIL y sumar correctamente las bases.</div>
+              </div>
+            </div>
+            <div class="te-card critico">
+              <div class="te-card-head">
+                <span class="te-rank">08</span><span class="te-icono">CBU</span>
+                <div class="te-card-head-txt"><div class="te-titulo">CBU inválido</div><div class="te-desc">Si forma de pago es 3, el CBU debe tener 22 dígitos en REG02.</div></div>
+                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">REG02 posiciones 74-95 y forma de pago posición 115. El CBU no va en REG04.</div></div>
+                <div class="te-sol-box">Completar CBU válido o cambiar forma de pago y exportar.</div>
+              </div>
+            </div>
+            <div class="te-card critico">
+              <div class="te-card-head">
+                <span class="te-rank">09</span><span class="te-icono">123</span>
+                <div class="te-card-head-txt"><div class="te-titulo">Formato numérico incorrecto</div><div class="te-desc">Campos con comas, signos, notación científica o longitud inválida.</div></div>
+                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Importes de REG03/REG04, centavos implícitos, ceros a izquierda y ausencia de separadores.</div></div>
+                <div class="te-sol-box">Normalizar formato numérico desde el origen y regenerar el TXT.</div>
+              </div>
+            </div>
+            <div class="te-card advertencia">
+              <div class="te-card-head">
+                <span class="te-rank">10</span><span class="te-icono">SAC</span>
+                <div class="te-card-head-txt"><div class="te-titulo">SAC fuera de período</div><div class="te-desc">Conceptos SAC semestrales informados fuera de junio o diciembre.</div></div>
+                <span class="te-sev advertencia">REVISAR</span><span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Período REG01 y conceptos SAC en REG03. Usar conceptos proporcionales cuando corresponda.</div></div>
+                <div class="te-sol-box">Corregir el concepto o moverlo al período correcto.</div>
+              </div>
+            </div>
+          </div>
         </main>
       </div>
 
@@ -265,6 +410,10 @@
         document.getElementById('tab-'+tab).classList.add('activo');
         if(tab==='historial') renderHistorial();
       });
+    });
+
+    document.querySelectorAll('.te-card-head').forEach(head=>{
+      head.addEventListener('click', ()=>head.closest('.te-card')?.classList.toggle('open'));
     });
 
     // ═══════════════════════════════════════════════════════
@@ -489,6 +638,55 @@
       });
     }
 
+    function cuilsPorSeveridad(problemas, severidad){
+      const buscada = severidad.toUpperCase();
+      const set = new Set();
+      (problemas||[]).forEach(p=>{
+        if((p.severidad||'').toUpperCase()!==buscada) return;
+        (p.todos_los_cuils_afectados||p.ejemplos_cuil||[]).forEach(c=>{ if(c) set.add(c); });
+      });
+      return set;
+    }
+
+    function renderEstadoChart(problemas, stats){
+      const totalEmp = Number(stats.total_empleados ?? stats.empleados ?? 0) || 0;
+      const critSet = cuilsPorSeveridad(problemas,'CRITICO');
+      const warnSet = cuilsPorSeveridad(problemas,'ADVERTENCIA');
+      critSet.forEach(c=>warnSet.delete(c));
+      const crit = critSet.size || problemas.filter(p=>(p.severidad||'').toUpperCase()==='CRITICO' && !(p.todos_los_cuils_afectados||[]).length).length;
+      const warn = warnSet.size || problemas.filter(p=>(p.severidad||'').toUpperCase()==='ADVERTENCIA' && !(p.todos_los_cuils_afectados||[]).length).length;
+      const totalBase = Math.max(totalEmp, crit + warn, 1);
+      const ok = Math.max(totalBase - crit - warn, 0);
+      const critDeg = (crit / totalBase) * 360;
+      const warnDeg = (warn / totalBase) * 360;
+      const chart = document.getElementById('health-chart');
+      chart.style.setProperty('--crit-deg', `${critDeg}deg`);
+      chart.style.setProperty('--warn-deg', `${warnDeg}deg`);
+      chart.style.setProperty('--ok-deg', `${Math.max(360-critDeg-warnDeg,0)}deg`);
+      document.getElementById('health-total').textContent = totalEmp || totalBase;
+      document.getElementById('h-ok').textContent = ok;
+      document.getElementById('h-crit').textContent = crit;
+      document.getElementById('h-warn').textContent = warn;
+    }
+
+    function diferenciasNormalizadas(p){
+      const directas = (p.diferencias_por_cuil||[]).filter(d=>d && d.cuil);
+      const utiles = directas.filter(d=>['legajo','base','informado','determinado','diferencia'].some(k=>d[k]!==undefined&&d[k]!==null&&d[k]!==''&&d[k]!=='—'));
+      if(utiles.length) return directas;
+      const evidencias = p.detalle_tecnico?.evidencias || [];
+      return evidencias.map(ev=>{
+        const det = ev.detalle || {};
+        return {
+          legajo: det.legajo || '—',
+          cuil: ev.cuil || '—',
+          base: det.base || '—',
+          informado: det.informado || '—',
+          determinado: det.determinado || '—',
+          diferencia: det.diferencia || '—'
+        };
+      }).filter(d=>d.cuil && d.cuil!=='—');
+    }
+
     function mostrarInforme(data) {
       panelProg.style.display='none';
       resultado.style.display='block';
@@ -530,6 +728,7 @@
       document.getElementById('s-crit').textContent = nCrit;
       document.getElementById('s-adv').textContent  = nAdv;
       document.getElementById('resumen').textContent = data.resumen||'';
+      renderEstadoChart(probs, s);
 
       const lista=document.getElementById('probs-lista');
       const tit=document.getElementById('probs-titulo');
@@ -563,32 +762,45 @@
               </details>`;
           }
 
-          // ── Diferencias por CUIL (tabla detallada) ─────────────────
+          // ── Diferencias por CUIL, plegadas y sin repetir explicación ─
           let difH = '';
-          const difs = p.diferencias_por_cuil || [];
+          const difs = diferenciasNormalizadas(p);
           if(difs.length){
-            const filasDif = difs.slice(0,30).map(d=>`
+            const bases = Array.from(new Set(difs.map(d=>d.base).filter(v=>v!==undefined&&v!==null&&v!=='')));
+            const difsConImporte = difs.map(d=>Number(d.diferencia)).filter(n=>Number.isFinite(n));
+            const totalAbs = difsConImporte.reduce((acc,n)=>acc+Math.abs(n),0);
+            const filasDif = difs.map(d=>`
               <tr>
-                <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-family:monospace;font-size:11px;color:var(--es-blue);">${esc(d.cuil||'')}</td>
-                <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;text-align:right;font-variant-numeric:tabular-nums;">${d.informado??'—'}</td>
-                <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;text-align:right;font-variant-numeric:tabular-nums;">${d.determinado??'—'}</td>
-                <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;text-align:right;color:var(--err);font-variant-numeric:tabular-nums;">${d.diferencia??'—'}</td>
-                <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--txt-lo);">${esc(d.interpretacion||'')}</td>
+                <td>${esc(d.legajo||'—')}</td>
+                <td><code>${esc(d.cuil||'—')}</code></td>
+                <td>${d.base??'—'}</td>
+                <td class="num">${d.informado??'—'}</td>
+                <td class="num">${d.determinado??'—'}</td>
+                <td class="num err">${d.diferencia??'—'}</td>
               </tr>`).join('');
-            const masDif = difs.length>30 ? `<tr><td colspan="5" style="padding:6px 10px;font-size:11px;color:var(--txt-lo);text-align:center;">... y ${difs.length-30} empleados más</td></tr>` : '';
-            difH = `<div class="dl"><div class="dl-l">📊 Detalle por empleado</div>
-              <div style="overflow-x:auto;margin-top:6px;border:1px solid var(--border);border-radius:var(--r);">
-                <table style="width:100%;border-collapse:collapse;background:var(--surface);">
-                  <thead><tr style="background:var(--surface-2);">
-                    <th style="padding:6px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt-lo);border-bottom:1px solid var(--border);">CUIL</th>
-                    <th style="padding:6px 10px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt-lo);border-bottom:1px solid var(--border);">Informado</th>
-                    <th style="padding:6px 10px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt-lo);border-bottom:1px solid var(--border);">Determinado</th>
-                    <th style="padding:6px 10px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--err);border-bottom:1px solid var(--border);">Diferencia</th>
-                    <th style="padding:6px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt-lo);border-bottom:1px solid var(--border);">Motivo</th>
+            difH = `<div class="dl"><div class="dl-l">Resumen del impacto</div>
+              <div class="impact-summary">
+                <span>${difs.length} empleado${difs.length!==1?'s':''} con diferencia</span>
+                ${bases.length?`<span>Base${bases.length!==1?'s':''}: ${bases.map(b=>esc(String(b))).join(', ')}</span>`:''}
+                ${totalAbs?`<span>Diferencia total aprox.: ${totalAbs.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`:''}
+              </div>
+              <details class="diff-detail">
+                <summary>Ver CUILs, legajos y diferencias</summary>
+                <div class="diff-table-wrap">
+                  <table class="diff-table">
+                    <thead><tr>
+                      <th>Legajo</th>
+                      <th>CUIL</th>
+                      <th>Base</th>
+                      <th>Informado</th>
+                      <th>Referencia</th>
+                      <th>Diferencia</th>
                   </tr></thead>
-                  <tbody>${filasDif}${masDif}</tbody>
-                </table>
-              </div></div>`;
+                    <tbody>${filasDif}</tbody>
+                  </table>
+                </div>
+              </details>
+            </div>`;
           }
 
           // ── Tutorial paso a paso ────────────────────────────────────

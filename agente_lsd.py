@@ -789,6 +789,8 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
         importe_detraer = reg.get("importe_detraer")
         rem = reg.get("rem_bruta")
         base1 = reg.get("base1")
+        empleado = analisis["empleados"].get(reg["cuil"], {})
+        legajo = (empleado.get("legajo") or "").strip()
         conceptos = analisis["conceptos_por_cuil"].get(reg["cuil"], [])
         concepto_0577 = _sumar_conceptos(conceptos, {"0577"})
         concepto_0448 = _sumar_conceptos(conceptos, {"0448"})
@@ -827,6 +829,11 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
                 cuil=reg["cuil"],
                 detalle={
                     "patron": "concepto_0577_con_base9_mayor_a_base1",
+                    "legajo": legajo,
+                    "base": 9,
+                    "informado": str(reg["base9"]),
+                    "determinado": str(base1),
+                    "diferencia": str(reg["base9"] - base1),
                     "concepto_0577": str(concepto_0577),
                     "base1": reg["base1_raw"],
                     "base9": reg["base9_raw"],
@@ -851,6 +858,11 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
                 cuil=reg["cuil"],
                 detalle={
                     "patron": "incrementos_no_remunerativos_inflando_base9",
+                    "legajo": legajo,
+                    "base": 9,
+                    "informado": str(reg["base9"]),
+                    "determinado": str(base1),
+                    "diferencia": str(reg["base9"] - base1),
                     "conceptos_incremento": str(conceptos_incremento_no_rem),
                     "base1": reg["base1_raw"],
                     "base4": reg["base4_raw"],
@@ -879,6 +891,11 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
                 cuil=reg["cuil"],
                 detalle={
                     "patron": "concepto_0448_sumado_indebidamente_a_base9",
+                    "legajo": legajo,
+                    "base": 9,
+                    "informado": str(reg["base9"]),
+                    "determinado": str(rem),
+                    "diferencia": str(reg["base9"] - rem),
                     "concepto_0448": str(concepto_0448),
                     "rem_bruta": reg["rem_bruta_raw"],
                     "base9": reg["base9_raw"],

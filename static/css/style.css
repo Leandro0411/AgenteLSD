@@ -711,6 +711,105 @@ main {
     box-shadow: var(--shadow-s);
     line-height: 1.7;
 }
+
+.health-panel {
+    display: grid;
+    grid-template-columns: 168px minmax(0, 1fr);
+    gap: 18px;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 18px;
+    margin-block-end: 20px;
+    box-shadow: var(--shadow-s);
+}
+
+.health-chart {
+    --crit-deg: 0deg;
+    --warn-deg: 0deg;
+    --ok-deg: 360deg;
+    width: 140px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background:
+        conic-gradient(
+            var(--err) 0deg var(--crit-deg),
+            var(--warn) var(--crit-deg) calc(var(--crit-deg) + var(--warn-deg)),
+            var(--ok) calc(var(--crit-deg) + var(--warn-deg)) 360deg
+        );
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.04), var(--shadow-s);
+}
+
+.health-chart-inner {
+    width: 88px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    text-align: center;
+}
+
+.health-chart-inner strong {
+    color: var(--txt-hi);
+    font-size: 24px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.health-chart-inner span {
+    margin-block-start: 3px;
+    color: var(--txt-lo);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.health-info .sec-t { margin-block-end: 10px; }
+
+.health-legend {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.health-legend span {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 9px 10px;
+    background: var(--surface-2);
+    color: var(--txt-mid);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.health-legend i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.health-legend strong {
+    color: var(--txt-hi);
+    font-variant-numeric: tabular-nums;
+}
+
+.h-ok { background: var(--ok); }
+.h-crit { background: var(--err); }
+.h-warn { background: var(--warn); }
+
 .sec-t {
     font-size: 11px;
     font-weight: 700;
@@ -844,6 +943,75 @@ main {
     font-size: 12px;
     font-weight: 700;
 }
+
+.diff-detail {
+    margin-block-start: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface);
+    overflow: hidden;
+}
+
+.diff-detail > summary {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    padding: 9px 12px;
+    cursor: pointer;
+    color: var(--es-blue);
+    font-size: 12px;
+    font-weight: 800;
+    user-select: none;
+}
+
+.diff-detail[open] > summary {
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+}
+
+.diff-table-wrap {
+    max-height: 320px;
+    overflow: auto;
+}
+
+.diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+}
+
+.diff-table th,
+.diff-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    text-align: left;
+}
+
+.diff-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface-2);
+    color: var(--txt-lo);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.diff-table code {
+    color: var(--es-blue);
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+}
+
+.diff-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.diff-table .err { color: var(--err); }
 /* ── Diferencias agrupadas por motivo ─────────────────────────── */
 .dif-grupos-wrap {
     display: flex;
@@ -1990,6 +2158,9 @@ main {
     .drop-t { font-size: 14px; }
     .stats { grid-template-columns: repeat(2, 1fr); }
     .stat { padding: 14px 10px; }
+    .health-panel { grid-template-columns: 1fr; justify-items: center; }
+    .health-info { width: 100%; }
+    .health-legend { grid-template-columns: 1fr; }
     .pc-head { align-items: flex-start; gap: 8px; }
     .pc-meta { display: none; }
     .chat-fab { right: 16px; bottom: 16px; width: 54px; height: 54px; }
