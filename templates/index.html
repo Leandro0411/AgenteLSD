@@ -40,14 +40,14 @@
           <span class="tab-ico" aria-hidden="true">TXT</span>
           <span>Validar archivo</span>
         </button>
+        <button class="tab-btn" data-tab="frecuentes" role="tab" aria-selected="false">
+          <span class="tab-ico top-ico" aria-hidden="true">10</span>
+          <span>Errores frecuentes</span>
+        </button>
         <button class="tab-btn" data-tab="historial" role="tab" aria-selected="false">
           <span class="tab-ico" aria-hidden="true">H</span>
           <span>Historial</span>
           <span id="hist-count"></span>
-        </button>
-        <button class="tab-btn" data-tab="frecuentes" role="tab" aria-selected="false">
-          <span class="tab-ico top-ico" aria-hidden="true">10</span>
-          <span>Errores frecuentes</span>
         </button>
       </nav>
     </aside>
@@ -871,8 +871,6 @@
             </div>
             <div class="pc-body">
               <div class="dl"><div class="dl-l">¿Qué está pasando?</div><div class="dl-t">${esc(p.descripcion||'')}</div></div>
-              ${cuilsH?`<div class="dl"><div class="dl-l">Empleados afectados</div>${cuilsH}</div>`:''}
-              ${difH}
               <div class="dl"><div class="dl-l">¿Por qué ocurre?</div><div class="dl-t">${esc(p.causa||'')}</div></div>
               ${tutH}
               <div class="dl"><div class="dl-l">Resumen de solución</div><div class="sol-box">${esc(p.solucion||'')}</div></div>
