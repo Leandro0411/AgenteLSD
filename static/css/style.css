@@ -1034,6 +1034,135 @@ main {
     background: var(--surface);
 }
 
+/* ── Nuevo desplegable unificado de empleados afectados ─────── */
+.afectados-box {
+    margin-block: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--surface-2);
+    overflow: hidden;
+    transition: box-shadow .15s;
+}
+
+.afectados-box[open] {
+    box-shadow: var(--shadow-s);
+}
+
+.afectados-box > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--txt-mid);
+    border-bottom: 1px solid transparent;
+    transition: background .15s, border-color .15s;
+}
+
+.afectados-box > summary::-webkit-details-marker { display: none; }
+
+.afectados-box[open] > summary {
+    border-bottom-color: var(--border);
+    background: var(--surface);
+}
+
+.afectados-box > summary:hover {
+    background: var(--surface);
+}
+
+.afectados-ico {
+    font-size: 16px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.afectados-lbl {
+    flex-shrink: 0;
+    color: var(--txt-hi);
+}
+
+.afectados-resumen {
+    flex: 1;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--txt-lo);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.afectados-chev {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--txt-lo);
+    transition: transform .2s;
+}
+
+.afectados-box[open] .afectados-chev {
+    transform: rotate(180deg);
+}
+
+.afectados-tabla-wrap {
+    max-height: 340px;
+    overflow: auto;
+    background: var(--surface);
+}
+
+.afectados-tabla {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.afectados-tabla th,
+.afectados-tabla td {
+    padding: 7px 11px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    text-align: left;
+}
+
+.afectados-tabla th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface-2);
+    color: var(--txt-lo);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+}
+
+.afectados-tabla td code {
+    color: var(--es-blue);
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+}
+
+.afectados-tabla .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.afectados-tabla .err { color: var(--err); font-weight: 700; }
+
+.afectados-tabla tr:last-child td { border-bottom: none; }
+
+.afectados-tabla tr:hover td { background: var(--surface-2); }
+
+.afectados-tabla .mas-filas td {
+    text-align: center;
+    color: var(--txt-lo);
+    font-size: 11px;
+    font-style: italic;
+    padding: 10px;
+}
+
 .cuils {
     display: flex;
     flex-wrap: wrap;
@@ -1042,6 +1171,7 @@ main {
     overflow: auto;
     padding: 10px 12px;
 }
+
 .ctag {
     background: var(--es-blue-l);
     border: 1px solid rgba(27,86,232,.2);

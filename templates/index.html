@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -812,59 +812,75 @@
           const div=document.createElement('div');
           div.className=`pc ${sev}`;
           if(i===0) div.classList.add('open');
-          // ── Todos los CUILs afectados (agrupados) ──────────────────
-          const todosLosC = p.todos_los_cuils_afectados || p.ejemplos_cuil || [];
+          // ── Empleados afectados + diferencias (unificado) ──────────────────
+          const todosLosC  = p.todos_los_cuils_afectados || p.ejemplos_cuil || [];
+          const difs       = diferenciasNormalizadas(p);
           let cuilsH = '';
-          if(todosLosC.length){
-            const visibles  = todosLosC.slice(0,30);
-            const restantes = todosLosC.length - visibles.length;
-            const tags = visibles.map(c=>`<span class="ctag">${esc(c)}</span>`).join('');
-            cuilsH = `
-              <details class="affected-box">
-                <summary>${todosLosC.length} empleado${todosLosC.length!==1?'s':''} afectado${todosLosC.length!==1?'s':''}</summary>
-                <div class="cuils">${tags}${restantes>0?`<span class="ctag muted">+${restantes} más</span>`:''}</div>
-              </details>`;
-          }
 
-          // ── Diferencias por CUIL, plegadas y sin repetir explicación ─
-          let difH = '';
-          const difs = diferenciasNormalizadas(p);
-          if(difs.length){
-            const bases = Array.from(new Set(difs.map(d=>d.base).filter(v=>v!==undefined&&v!==null&&v!=='')));
+          if(todosLosC.length || difs.length){
+            // Construir mapa cuil->diferencia para enriquecer la tabla
+            const difMap = new Map();
+            difs.forEach(d=>{ if(d.cuil) difMap.set(String(d.cuil), d); });
+
+            // Unir todos los CUILs conocidos (de la lista + del mapa de diferencias)
+            const cuilsSet = new Set([...todosLosC.map(String), ...difMap.keys()]);
+            const cuilsArr = Array.from(cuilsSet);
+            const total    = cuilsArr.length;
+
+            // ¿Hay datos de diferencias para mostrar columnas extra?
+            const hayDifs = difs.length > 0;
+
+            const filas = cuilsArr.slice(0,100).map(cuil=>{
+              const d = difMap.get(cuil);
+              if(hayDifs){
+                return `<tr>
+                  <td>${esc(d?.legajo||'—')}</td>
+                  <td><code>${esc(cuil)}</code></td>
+                  ${d?.base!==undefined ? `<td>${esc(String(d.base??'—'))}</td>` : '<td>—</td>'}
+                  <td class="num">${esc(String(d?.informado??'—'))}</td>
+                  <td class="num">${esc(String(d?.determinado??'—'))}</td>
+                  <td class="num err">${esc(String(d?.diferencia??'—'))}</td>
+                </tr>`;
+              } else {
+                return `<tr>
+                  <td>${esc(d?.legajo||'—')}</td>
+                  <td><code>${esc(cuil)}</code></td>
+                </tr>`;
+              }
+            }).join('');
+
+            const restoH = cuilsArr.length>100
+              ? `<tr class="mas-filas"><td colspan="${hayDifs?6:2}">… y ${cuilsArr.length-100} más</td></tr>` : '';
+
+            // Resumen rápido de impacto
             const difsConImporte = difs.map(d=>Number(d.diferencia)).filter(n=>Number.isFinite(n));
             const totalAbs = difsConImporte.reduce((acc,n)=>acc+Math.abs(n),0);
-            const filasDif = difs.map(d=>`
-              <tr>
-                <td>${esc(d.legajo||'—')}</td>
-                <td><code>${esc(d.cuil||'—')}</code></td>
-                <td>${d.base??'—'}</td>
-                <td class="num">${d.informado??'—'}</td>
-                <td class="num">${d.determinado??'—'}</td>
-                <td class="num err">${d.diferencia??'—'}</td>
-              </tr>`).join('');
-            difH = `<div class="dl"><div class="dl-l">Resumen del impacto</div>
-              <div class="impact-summary">
-                <span>${difs.length} empleado${difs.length!==1?'s':''} con diferencia</span>
-                ${bases.length?`<span>Base${bases.length!==1?'s':''}: ${bases.map(b=>esc(String(b))).join(', ')}</span>`:''}
-                ${totalAbs?`<span>Diferencia total aprox.: ${totalAbs.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`:''}
-              </div>
-              <details class="diff-detail">
-                <summary>Ver CUILs, legajos y diferencias</summary>
-                <div class="diff-table-wrap">
-                  <table class="diff-table">
+            const basesMostradas = Array.from(new Set(difs.map(d=>d.base).filter(Boolean)));
+
+            const resumenH = [
+              basesMostradas.length ? `Base${basesMostradas.length>1?'s':''}: <strong>${basesMostradas.map(b=>esc(String(b))).join(', ')}</strong>` : '',
+              totalAbs ? `Diferencia total: <strong>${totalAbs.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>` : ''
+            ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+
+            cuilsH = `
+              <details class="afectados-box">
+                <summary>
+                  <span class="afectados-ico">👥</span>
+                  <span class="afectados-lbl">${total} empleado${total!==1?'s':''} afectado${total!==1?'s':''}</span>
+                  ${resumenH ? `<span class="afectados-resumen">${resumenH}</span>` : ''}
+                  <span class="afectados-chev">▾</span>
+                </summary>
+                <div class="afectados-tabla-wrap">
+                  <table class="afectados-tabla">
                     <thead><tr>
                       <th>Legajo</th>
                       <th>CUIL</th>
-                      <th>Base</th>
-                      <th>Informado</th>
-                      <th>Referencia</th>
-                      <th>Diferencia</th>
-                  </tr></thead>
-                    <tbody>${filasDif}</tbody>
+                      ${hayDifs ? '<th>Base</th><th>Informado</th><th>Referencia</th><th>Diferencia</th>' : ''}
+                    </tr></thead>
+                    <tbody>${filas}${restoH}</tbody>
                   </table>
                 </div>
-              </details>
-            </div>`;
+              </details>`;
           }
 
           // ── Tutorial paso a paso ────────────────────────────────────
@@ -936,6 +952,7 @@
             <div class="pc-body">
               <div class="dl"><div class="dl-l">¿Qué está pasando?</div><div class="dl-t">${esc(p.descripcion||'')}</div></div>
               <div class="dl"><div class="dl-l">¿Por qué ocurre?</div><div class="dl-t">${esc(p.causa||'')}</div></div>
+              ${cuilsH}
               ${tutH}
               <div class="dl"><div class="dl-l">Resumen de solución</div><div class="sol-box">${esc(p.solucion||'')}</div></div>
               ${techH}
