@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agente LSD — Validador ARCA | e-Sueldos</title>
+  <title>Agente LSD — Validador | e-Sueldos</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23F7FAFF'/%3E%3Cpath d='M22.7 43.5h23.1c6.1 0 11.1-4.8 11.1-10.8 0-5.6-4.3-10.2-9.8-10.7C44.8 14.6 38.1 9.4 30.3 9.4c-8.4 0-15.4 6-16.9 13.9C8.1 24.6 4.1 29.3 4.1 34.9c0 6.8 5.5 8.6 18.6 8.6z' fill='%231B56E8'/%3E%3Cpath d='M24.4 36.5h20.9c3.8 0 6.8-2.8 6.8-6.3 0-3.3-2.6-6-6-6.3C44.5 18.8 39.8 15 34.1 15c-6.1 0-11.1 4.4-12.2 10.1-3.9.9-6.8 4.1-6.8 7.9 0 3.9 3.3 3.5 9.3 3.5z' fill='%233B82F6' opacity='.45'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,7 +24,7 @@
       <span class="hdr-logo-txt">e-<span>Sueldos</span></span>
     </a>
     <div class="hdr-sep"></div>
-    <span class="hdr-tool">Agente LSD · Validador ARCA</span>
+    <span class="hdr-tool">Agente Libro de Suedos Digital · Validador</span>
     <div class="hdr-right">
       <span class="hdr-status">
         <span class="hdr-status-dot"></span>
@@ -149,19 +149,42 @@
           <div class="stat"><div class="stat-v a" id="s-adv">—</div><div class="stat-l">Advertencias</div></div>
         </div>
         <div class="resumen" id="resumen"></div>
-        <section class="health-panel" id="health-panel">
-          <div class="health-chart" id="health-chart" aria-label="Distribución del análisis">
-            <div class="health-chart-inner">
+        <!-- ── Gráfico visual de estado ── -->
+        <section class="dona-panel" id="health-panel">
+          <div class="dona-wrap">
+            <svg class="dona-svg" viewBox="0 0 220 220" aria-label="Distribución del análisis">
+              <circle class="dona-track" cx="110" cy="110" r="80"/>
+              <g id="dona-arcs"></g>
+            </svg>
+            <div class="dona-centro">
               <strong id="health-total">—</strong>
-              <span>empleados</span>
+              <span id="dona-lbl-centro">empleados</span>
             </div>
           </div>
-          <div class="health-info">
-            <div class="sec-t">Estado general del archivo</div>
-            <div class="health-legend">
-              <span><i class="h-ok"></i><strong id="h-ok">0</strong> validados</span>
-              <span><i class="h-crit"></i><strong id="h-crit">0</strong> con error crítico</span>
-              <span><i class="h-warn"></i><strong id="h-warn">0</strong> advertencias</span>
+          <div class="dona-info">
+            <div class="dona-titulo">Estado general del archivo</div>
+            <div class="dona-leyendas" id="dona-leyendas">
+              <div class="dona-ley-item" id="dona-ley-ok">
+                <div class="dona-ley-dot" style="background:var(--ok)"></div>
+                <div class="dona-ley-txt">
+                  <span class="dona-ley-label">Validados</span>
+                  <span class="dona-ley-val"><strong id="h-ok">0</strong> <small id="dona-pct-ok"></small></span>
+                </div>
+              </div>
+              <div class="dona-ley-item" id="dona-ley-crit">
+                <div class="dona-ley-dot" style="background:var(--err)"></div>
+                <div class="dona-ley-txt">
+                  <span class="dona-ley-label">Errores críticos</span>
+                  <span class="dona-ley-val"><strong id="h-crit">0</strong> <small id="dona-pct-crit"></small></span>
+                </div>
+              </div>
+              <div class="dona-ley-item" id="dona-ley-warn">
+                <div class="dona-ley-dot" style="background:var(--warn)"></div>
+                <div class="dona-ley-txt">
+                  <span class="dona-ley-label">Advertencias</span>
+                  <span class="dona-ley-val"><strong id="h-warn">0</strong> <small id="dona-pct-warn"></small></span>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -650,24 +673,65 @@
 
     function renderEstadoChart(problemas, stats){
       const totalEmp = Number(stats.total_empleados ?? stats.empleados ?? 0) || 0;
-      const critSet = cuilsPorSeveridad(problemas,'CRITICO');
-      const warnSet = cuilsPorSeveridad(problemas,'ADVERTENCIA');
+      const critSet  = cuilsPorSeveridad(problemas,'CRITICO');
+      const warnSet  = cuilsPorSeveridad(problemas,'ADVERTENCIA');
       critSet.forEach(c=>warnSet.delete(c));
-      const crit = critSet.size || problemas.filter(p=>(p.severidad||'').toUpperCase()==='CRITICO' && !(p.todos_los_cuils_afectados||[]).length).length;
-      const warn = warnSet.size || problemas.filter(p=>(p.severidad||'').toUpperCase()==='ADVERTENCIA' && !(p.todos_los_cuils_afectados||[]).length).length;
-      const totalBase = Math.max(totalEmp, crit + warn, 1);
-      const ok = Math.max(totalBase - crit - warn, 0);
-      const critDeg = (crit / totalBase) * 360;
-      const warnDeg = (warn / totalBase) * 360;
-      const chart = document.getElementById('health-chart');
-      chart.style.setProperty('--crit-deg', `${critDeg}deg`);
-      chart.style.setProperty('--warn-deg', `${warnDeg}deg`);
-      chart.style.setProperty('--ok-deg', `${Math.max(360-critDeg-warnDeg,0)}deg`);
+      const crit = critSet.size || problemas.filter(p=>(p.severidad||'').toUpperCase()==='CRITICO'&&!(p.todos_los_cuils_afectados||[]).length).length;
+      const warn = warnSet.size || problemas.filter(p=>(p.severidad||'').toUpperCase()==='ADVERTENCIA'&&!(p.todos_los_cuils_afectados||[]).length).length;
+      const totalBase = Math.max(totalEmp, crit+warn, 1);
+      const ok = Math.max(totalBase-crit-warn, 0);
+
+      // Centro del donut
       document.getElementById('health-total').textContent = totalEmp || totalBase;
-      document.getElementById('h-ok').textContent = ok;
+      const lblC = document.getElementById('dona-lbl-centro');
+      if(lblC) lblC.textContent = crit>0 ? (crit===1?'error crítico':'errores críticos') : (warn>0?'advertencias':'validados');
+
+      // Leyendas con porcentajes
+      const pct = n => totalBase>0 ? Math.round(n/totalBase*100)+'%' : '0%';
+      document.getElementById('h-ok').textContent   = ok;
       document.getElementById('h-crit').textContent = crit;
       document.getElementById('h-warn').textContent = warn;
+      const pOk=document.getElementById('dona-pct-ok'); if(pOk) pOk.textContent=pct(ok);
+      const pC=document.getElementById('dona-pct-crit'); if(pC) pC.textContent=pct(crit);
+      const pW=document.getElementById('dona-pct-warn'); if(pW) pW.textContent=pct(warn);
+
+      // Destacar item dominante
+      ['ok','crit','warn'].forEach(k=>{ const el=document.getElementById('dona-ley-'+k); if(el) el.classList.remove('dominante'); });
+      if(crit>0)      { const el=document.getElementById('dona-ley-crit'); if(el) el.classList.add('dominante'); }
+      else if(warn>0) { const el=document.getElementById('dona-ley-warn'); if(el) el.classList.add('dominante'); }
+      else            { const el=document.getElementById('dona-ley-ok');   if(el) el.classList.add('dominante'); }
+
+      // Arcos SVG animados
+      const arcsG = document.getElementById('dona-arcs');
+      if(!arcsG) return;
+      arcsG.innerHTML = '';
+      const R=80, cx=110, cy=110, circum=2*Math.PI*R, GAP=4;
+      const segs = [
+        {val:crit, color:'#EF4444'},
+        {val:warn, color:'#F59E0B'},
+        {val:ok,   color:'#22C55E'}
+      ].filter(s=>s.val>0);
+      if(!segs.length) return;
+      const useGap = segs.length>1;
+      let angle=-90;
+      segs.forEach(seg=>{
+        const frac=seg.val/totalBase;
+        const dash=Math.max(0,frac*circum-(useGap?GAP:0));
+        const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c.setAttribute('cx',cx); c.setAttribute('cy',cy); c.setAttribute('r',R);
+        c.setAttribute('fill','none'); c.setAttribute('stroke',seg.color);
+        c.setAttribute('stroke-width','40');
+        c.setAttribute('stroke-dasharray','0 '+circum);
+        c.setAttribute('stroke-dashoffset', String(-(angle/360)*circum-circum/4));
+        arcsG.appendChild(c);
+        requestAnimationFrame(()=>{
+          c.style.transition='stroke-dasharray .85s cubic-bezier(.4,0,.2,1)';
+          c.setAttribute('stroke-dasharray', dash+' '+(circum-dash));
+        });
+        angle+=frac*360;
+      });
     }
+
 
     function diferenciasNormalizadas(p){
       const directas = (p.diferencias_por_cuil||[]).filter(d=>d && d.cuil);

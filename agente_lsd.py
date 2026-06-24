@@ -42,7 +42,7 @@ except ImportError:
 # CONFIGURACIÓN
 # ---------------------------------------------------------------------------
 
-MODELO = "gemini-2.5-flash"
+MODELO = "gemini-3.5-flash"
 
 # ---------------------------------------------------------------------------
 # Constantes de formato LSD (0-indexed, spec AFIP LSD v2.x)

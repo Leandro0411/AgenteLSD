@@ -712,6 +712,143 @@ main {
     line-height: 1.7;
 }
 
+/* ── Donut chart panel ───────────────────────────────── */
+.dona-panel {
+    display: grid;
+    grid-template-columns: 240px minmax(0,1fr);
+    gap: 24px;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 24px;
+    margin-block-end: 24px;
+    box-shadow: var(--shadow-s);
+}
+
+.dona-wrap {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    flex-shrink: 0;
+}
+
+.dona-svg {
+    width: 200px;
+    height: 200px;
+    overflow: visible;
+}
+
+.dona-track {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 40;
+}
+
+.dona-centro {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.dona-centro strong {
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--txt-hi);
+    font-variant-numeric: tabular-nums;
+}
+
+.dona-centro span {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--txt-lo);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-block-start: 4px;
+    text-align: center;
+    max-width: 90px;
+}
+
+.dona-info { flex: 1; }
+
+.dona-titulo {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--txt-lo);
+    margin-block-end: 14px;
+}
+
+.dona-leyendas {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dona-ley-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--r) - 2px);
+    background: var(--surface-2);
+    transition: border-color .2s, box-shadow .2s, transform .15s;
+    cursor: default;
+}
+
+.dona-ley-item.dominante {
+    border-color: var(--es-blue);
+    box-shadow: 0 0 0 2px rgba(27,86,232,.12);
+}
+
+.dona-ley-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.dona-ley-txt {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.dona-ley-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--txt-mid);
+}
+
+.dona-ley-val {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+}
+
+.dona-ley-val strong {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--txt-hi);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+.dona-ley-val small {
+    font-size: 11px;
+    color: var(--txt-lo);
+    font-weight: 600;
+}
+
+/* Retrocompatibilidad */
 .health-panel {
     display: grid;
     grid-template-columns: 168px minmax(0, 1fr);
@@ -724,6 +861,7 @@ main {
     margin-block-end: 20px;
     box-shadow: var(--shadow-s);
 }
+
 
 .health-chart {
     --crit-deg: 0deg;
