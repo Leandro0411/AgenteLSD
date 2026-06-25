@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -934,13 +934,18 @@
             const difMap = new Map();
             difs.forEach(d=>{ if(d.cuil) difMap.set(String(d.cuil), d); });
 
-            // Unir todos los CUILs conocidos (de la lista + del mapa de diferencias)
+            // Total real = todos los CUILs conocidos (para el header)
             const cuilsSet = new Set([...todosLosC.map(String), ...difMap.keys()]);
-            const cuilsArr = Array.from(cuilsSet);
-            const total    = cuilsArr.length;
+            const total    = cuilsSet.size;
 
             // ¿Hay datos de diferencias para mostrar columnas extra?
             const hayDifs = difs.length > 0;
+
+            // Si hay diferencias: solo mostrar filas con datos reales (en difMap)
+            // Si no: mostrar todos los CUILs conocidos con legajo+CUIL
+            const cuilsArr = hayDifs
+              ? Array.from(difMap.keys())
+              : Array.from(cuilsSet);
 
             const filas = cuilsArr.slice(0,100).map(cuil=>{
               const d = difMap.get(cuil);
