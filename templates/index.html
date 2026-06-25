@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -208,6 +208,8 @@
             <span class="te-badge">Drill-down consultor</span>
           </div>
           <div id="te-lista">
+
+            <!-- 01 -->
             <div class="te-card critico">
               <div class="te-card-head">
                 <span class="te-rank">01</span><span class="te-icono">!</span>
@@ -217,8 +219,19 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Alta temprana, fecha de ingreso/egreso, CUIT empleador y CUIL del trabajador en Simplificación Registral.</div></div>
                 <div class="te-sol-box">Corregir la relación laboral o fechas registrales y volver a exportar el LSD.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div><strong>Verificar en Simplificación Registral (Mi ARCA)</strong> que el CUIL esté dado de alta con el CUIT del empleador y las fechas correctas.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div><strong>En e-Sueldos → Empleados</strong>, controlar que la fecha de ingreso y egreso coincidan con la vigencia registral.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>Si el empleado fue dado de baja y reingresó, asegurarse de que haya un alta nueva antes del período liquidado.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>Regenerar el LSD desde <strong>Exportaciones → Libro Sueldo Digital</strong> y volver a validar.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- 02 -->
             <div class="te-card critico">
               <div class="te-card-head">
                 <span class="te-rank">02</span><span class="te-icono">BI</span>
@@ -228,8 +241,20 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Conceptos REG03, parametrización de bases, detracción, topes y conceptos no remunerativos que impactan Base 1, 4, 5 o 9.</div></div>
                 <div class="te-sol-box">Revisar impacto de conceptos, recalcular liquidación y regenerar REG04.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div>En e-Sueldos, abrir el empleado afectado y verificar la <strong>parametrización de conceptos</strong>: signo D/C, base imponible asignada (1, 4, 5 o 9) y topes.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div>Revisar si aplica <strong>detracción mínima</strong> (Guía ARCA N°45): el concepto 560.000 se usa para empleados en relación de dependencia; 570.000 para casos especiales.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>Verificar conceptos no remunerativos que impactan Base 9 (OS) o Base 4 (INSSJP): deben estar marcados correctamente.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>Ir a <strong>Liquidaciones → Recalcular</strong> para regenerar REG04 con los valores corregidos.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">5</span><div>Exportar nuevamente el TXT y verificar con el Agente LSD antes de presentar.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- 03 -->
             <div class="te-card critico">
               <div class="te-card-head">
                 <span class="te-rank">03</span><span class="te-icono">%</span>
@@ -239,8 +264,19 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Obra social, sindicato, modalidad, bases topeadas, aportes adicionales y configuración del concepto.</div></div>
                 <div class="te-sol-box">Actualizar parámetros de aportes/contribuciones y recalcular.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div>Verificar en <strong>Parámetros → Escala salarial</strong> que los porcentajes de OS y SS estén actualizados al período.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div>Revisar si el empleado tiene <strong>obra social diferencial</strong> o convenio con alícuota especial que difiera del 3% estándar.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>Controlar topes de base imponible mensual máxima (MOPRE). Si la remuneración supera el tope, el aporte se calcula sobre el tope, no sobre el total.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>Recalcular la liquidación y comparar el REG04 generado con los valores esperados por ARCA.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- 04 -->
             <div class="te-card critico">
               <div class="te-card-head">
                 <span class="te-rank">04</span><span class="te-icono">C</span>
@@ -250,8 +286,19 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Código de concepto, equivalencia ARCA, signo D/C, unidad, cantidad e impacto en subsistemas.</div></div>
                 <div class="te-sol-box">Parametrizar el concepto y volver a generar REG03.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div>En <strong>Conceptos → Listado</strong>, buscar el concepto con error y verificar si tiene asignado un código ARCA válido (tabla de conceptos del régimen).</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div>Controlar el <strong>signo D/C</strong>: los haberes son D (débito), los descuentos C (crédito). Un signo incorrecto produce REG03 inválido.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>Verificar <strong>unidad de medida</strong> (importe, cantidad, porcentaje) y que el campo cantidad esté completo si corresponde.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>Guardar cambios, recalcular la liquidación y regenerar el TXT.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- 05 -->
             <div class="te-card critico">
               <div class="te-card-head">
                 <span class="te-rank">05</span><span class="te-icono">REQ</span>
@@ -261,8 +308,19 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">CUIT/CUIL, período, cantidad de REG04, fecha de pago, forma de pago, días liquidados y bases.</div></div>
                 <div class="te-sol-box">Completar datos de empresa/empleado/liquidación y exportar otra vez.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div>En <strong>Empresa → Datos generales</strong>: confirmar CUIT, razón social y CUIT de la obra social. Sin estos, REG01 queda incompleto.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div>En <strong>Empleados</strong>: verificar CUIL, fecha de ingreso, categoría y convenio colectivo. Son campos obligatorios para REG02.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>En la liquidación: controlar <strong>fecha de pago, forma de pago y días trabajados</strong>. Si alguno está en cero o vacío, el REG04 se genera incompleto.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>Completar los datos faltantes, guardar y volver a exportar el LSD.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- 06 -->
             <div class="te-card critico">
               <div class="te-card-head">
                 <span class="te-rank">06</span><span class="te-icono">RB</span>
@@ -272,8 +330,19 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Conceptos remunerativos, descuentos, SAC, vacaciones, licencias y topes de base imponible.</div></div>
                 <div class="te-sol-box">Recalcular acumuladores de la liquidación y validar REG04.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div>Sumar manualmente los conceptos <strong>remunerativos haberes (D)</strong> del recibo y comparar con la Base 1 que figura en el REG04 del TXT.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div>Verificar que ningún concepto remunerativo esté marcado como "no impacta en base 1" por error de parametrización.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>Revisar si hay <strong>SAC proporcional o vacaciones</strong> que deben sumarse a la remuneración bruta del período.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>Ir a <strong>Liquidaciones → Recalcular</strong>, confirmar la operación y volver a exportar el TXT.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- 07 -->
             <div class="te-card critico">
               <div class="te-card-head">
                 <span class="te-rank">07</span><span class="te-icono">DUP</span>
@@ -283,8 +352,19 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Multi-legajo, consolidación por CUIL, acumulación de bases y días trabajados.</div></div>
                 <div class="te-sol-box">Consolidar un solo REG04 por CUIL y sumar correctamente las bases.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div>Buscar en e-Sueldos todos los legajos asociados al mismo CUIL. Puede ocurrir con empleados que tienen contrato principal + horas extras como legajo separado.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div>ARCA exige <strong>un único REG04 por CUIL</strong>. Las bases de todos los legajos deben consolidarse sumando Base 1, 4, 5 y 9.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>En la configuración de exportación LSD, activar la opción <strong>"Consolidar REG04 por CUIL"</strong> si está disponible.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>Regenerar el TXT y verificar que el CUIL aparezca una sola vez en la exportación.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- 08 -->
             <div class="te-card critico">
               <div class="te-card-head">
                 <span class="te-rank">08</span><span class="te-icono">CBU</span>
@@ -294,8 +374,19 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">REG02 posiciones 74-95 y forma de pago posición 115. El CBU no va en REG04.</div></div>
                 <div class="te-sol-box">Completar CBU válido o cambiar forma de pago y exportar.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div>En <strong>Empleados → Datos bancarios</strong>, ingresar el CBU completo de 22 dígitos. Verificar que no tenga espacios ni guiones.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div>Confirmar que la <strong>forma de pago</strong> del empleado esté configurada como "3 - Acreditación en cuenta" si tiene CBU.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>Si el empleado cobra en efectivo o cheque, cambiar la forma de pago a "1" o "2" y dejar el campo CBU en ceros.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>Regenerar el TXT y validar que el CBU aparezca en las posiciones 74-95 del REG02.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- 09 -->
             <div class="te-card critico">
               <div class="te-card-head">
                 <span class="te-rank">09</span><span class="te-icono">123</span>
@@ -305,8 +396,19 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Importes de REG03/REG04, centavos implícitos, ceros a izquierda y ausencia de separadores.</div></div>
                 <div class="te-sol-box">Normalizar formato numérico desde el origen y regenerar el TXT.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div>Los importes en el TXT van <strong>sin separador de miles ni coma decimal</strong>. El formato es entero con centavos implícitos (ej: $1.250,50 → 125050).</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div>Verificar que ningún importe tenga coma, punto como separador de miles, signo negativo o notación "1E+5".</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>Si el problema viene de una exportación personalizada, revisar el <strong>formato de salida numérica</strong> en la configuración de exportación.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>En e-Sueldos estándar, usar siempre la exportación oficial LSD que formatea automáticamente los campos.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <!-- 10 -->
             <div class="te-card advertencia">
               <div class="te-card-head">
                 <span class="te-rank">10</span><span class="te-icono">SAC</span>
@@ -316,8 +418,18 @@
               <div class="te-card-body">
                 <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Período REG01 y conceptos SAC en REG03. Usar conceptos proporcionales cuando corresponda.</div></div>
                 <div class="te-sol-box">Corregir el concepto o moverlo al período correcto.</div>
+                <div class="te-pasos-wrap">
+                  <div class="te-pasos-label">Cómo resolverlo</div>
+                  <div class="te-pasos">
+                    <div class="te-paso"><span class="te-paso-n">1</span><div>Si es SAC semestral real (junio/diciembre), verificar que el <strong>período de la liquidación</strong> sea 06 o 12. ARCA lo valida contra el REG01.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">2</span><div>Si es un SAC proporcional por egreso, usar el <strong>concepto de SAC proporcional</strong>, no el código de SAC semestral.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">3</span><div>Si el SAC fue liquidado fuera de período por error, anular esa liquidación y registrarla en el mes correcto.</div></div>
+                    <div class="te-paso"><span class="te-paso-n">4</span><div>Regenerar el TXT del período corregido y volver a validar.</div></div>
+                  </div>
+                </div>
               </div>
             </div>
+
           </div>
         </main>
       </div>
