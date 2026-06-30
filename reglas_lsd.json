@@ -32,6 +32,12 @@
     {"id": "LSD-REG04-DETRACCION-001", "severidad": "CRITICO", "campo": "REG04 detraccion/base 10", "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf"},
     {"id": "LSD-REG04-BASES-CONCEPTOS-001", "severidad": "CRITICO", "campo": "REG03/REG04 bases imponibles", "fuente_pdf": "validaciones.pdf"},
     {"id": "LSD-REG03-CONCEPTO-001", "severidad": "ADVERTENCIA", "campo": "REG03 concepto ARCA", "fuente_pdf": "validaciones.pdf"},
-    {"id": "LSD-REG03-SAC-001", "severidad": "CRITICO", "campo": "REG03 SAC", "fuente_pdf": "validaciones.pdf"}
+    {"id": "LSD-REG03-SAC-001", "severidad": "CRITICO", "campo": "REG03 SAC", "fuente_pdf": "validaciones.pdf"},
+    {"id": "LSD-REG04-BASE4-BASE5-001", "severidad": "CRITICO", "campo": "REG04 bases OS/INSSJP", "fuente_pdf": "validaciones.pdf"},
+    {"id": "LSD-REG04-BASE9-001", "severidad": "CRITICO", "campo": "REG04 Base 9", "fuente_pdf": "validaciones.pdf"},
+    {"id": "LSD-REG04-BASE9-002", "severidad": "CRITICO", "campo": "REG04 Base 9", "fuente_pdf": "validaciones.pdf"},
+    {"id": "LSD-REG04-BASE9-003", "severidad": "CRITICO", "campo": "REG04 Base 9", "fuente_pdf": "validaciones.pdf"},
+    {"id": "LSD-REG04-BASE2-001", "severidad": "CRITICO", "campo": "REG04 Base 2", "fuente_pdf": "validaciones.pdf"},
+    {"id": "LSD-REG04-REM10-001", "severidad": "CRITICO", "campo": "REG04 Rem10", "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf"}
   ]
 }

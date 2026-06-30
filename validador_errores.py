@@ -18,6 +18,15 @@ Formato del archivo de errores ARCA:
 import re
 from collections import defaultdict
 
+try:
+    from agente_lsd import REG04_BASE_POSICIONES
+except ImportError:
+    REG04_BASE_POSICIONES = {
+        1: (175, 190), 2: (190, 205), 3: (205, 220), 4: (220, 235),
+        5: (235, 250), 6: (250, 265), 7: (265, 280), 8: (280, 295),
+        9: (295, 310), 10: (340, 355),
+    }
+
 # ── Constantes compartidas ───────────────────────────────────────────────────
 TIPO_START  = 0;  TIPO_END    = 2
 CUIL_START  = 2;  CUIL_END    = 13
@@ -36,23 +45,10 @@ NOMBRE_BASE = {
     7:  "Base 7 — Régimen diferencial",
     8:  "Base 8 — Obra Social (contribuciones)",
     9:  "Base 9 — Rem. neta de detracción (Ley 27.430)",
-    10: "Base 10 — Otra",
+    10: "Base 10 — Rem10 (pos 340-355 en REG04 de 370 chars)",
 }
 
-# Posiciones de cada base en REG04 (0-indexed, 15 chars cada una)
-# Según spec AFIP LSD v2 y LibroDigitalReg04.java
-BASE_POSICIONES = {
-    1:  (175, 190),   # Rem. Bruta / Base 1 SIPA
-    2:  (190, 205),   # Base 2 contribuciones
-    3:  (205, 220),   # Base 3 FNE
-    4:  (220, 235),   # Base 4 OS/FSR
-    5:  (235, 250),   # Base 5 INSSJP
-    6:  (250, 265),   # Base 6 LRT
-    7:  (265, 280),   # Base 7
-    8:  (280, 295),   # Base 8 OS contrib.
-    9:  (295, 310),   # Base 9
-    10: (355, 370),   # Base 10 / Rem10
-}
+BASE_POSICIONES = REG04_BASE_POSICIONES
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

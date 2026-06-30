@@ -58,7 +58,14 @@ REG03_IMP_START = 29; REG03_IMP_END = 44
 REG03_DEB_CRED_START = 44; REG03_DEB_CRED_END = 45
 REG03_PERIODO_AJUSTE_START = 45; REG03_PERIODO_AJUSTE_END = 51
 REG04_BASE4_START  = 220; REG04_BASE4_END    = 235
-REG04_BASE10_START = 340; REG04_BASE10_END   = 355
+
+# REG04 de 370 chars (export e-Sueldos): Rem10 en 340-355, importe detracción en 355-370
+REG04_REM10_START = 340; REG04_REM10_END = 355
+REG04_IMPORTE_DETRACCION_START = 355; REG04_IMPORTE_DETRACCION_END = 370
+REG04_BASE10_START = REG04_REM10_START
+REG04_BASE10_END = REG04_REM10_END
+REG04_DETRACCION_START = REG04_IMPORTE_DETRACCION_START
+REG04_DETRACCION_END = REG04_IMPORTE_DETRACCION_END
 
 # Nuevas constantes — spec LSD v2 completa (posiciones 0-indexed)
 REG01_PERIODO_START       = 15;  REG01_PERIODO_END       = 21
@@ -82,8 +89,22 @@ REG04_BASE8_START         = 280; REG04_BASE8_END         = 295
 REG04_BASE9_START         = 295; REG04_BASE9_END         = 310
 REG04_DIF_APORTE_SS_START = 310; REG04_DIF_APORTE_SS_END = 325
 REG04_DIF_CONTR_SS_START  = 325; REG04_DIF_CONTR_SS_END  = 340
-REG04_HORAS_EXTRAS_START  = 340; REG04_HORAS_EXTRAS_END  = 355
-REG04_DETRACCION_START    = 355; REG04_DETRACCION_END    = 370
+REG04_HORAS_EXTRAS_START  = REG04_REM10_START
+REG04_HORAS_EXTRAS_END    = REG04_REM10_END
+
+# Posiciones REG04 bases imponibles (0-indexed, fin exclusivo) — compartidas con validador_errores
+REG04_BASE_POSICIONES = {
+    1:  (REG04_BASE1_START, REG04_BASE1_END),
+    2:  (REG04_BASE2_START, REG04_BASE2_END),
+    3:  (REG04_BASE3_START, REG04_BASE3_END),
+    4:  (REG04_BASE4_START, REG04_BASE4_END),
+    5:  (REG04_BASE5_START, REG04_BASE5_END),
+    6:  (REG04_BASE6_START, REG04_BASE6_END),
+    7:  (REG04_BASE7_START, REG04_BASE7_END),
+    8:  (REG04_BASE8_START, REG04_BASE8_END),
+    9:  (REG04_BASE9_START, REG04_BASE9_END),
+    10: (REG04_REM10_START, REG04_REM10_END),
+}
 
 # Longitudes exactas por tipo (ancho fijo)
 LONGITUDES_REQUERIDAS = {
@@ -322,6 +343,48 @@ RULE_CATALOG = {
         "fuente_pdf": "validaciones.pdf",
         "mensaje": "Conceptos SAC semestrales solo corresponden en junio o diciembre.",
         "fix_hint": "Usar el concepto proporcional/correcto o mover la liquidación al período correspondiente.",
+    },
+    "LSD-REG04-BASE4-BASE5-001": {
+        "severidad": "CRITICO",
+        "campo": "REG04 bases OS/INSSJP",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Base 4 (Obra Social) y Base 5 (INSSJP) deben coincidir en el REG04.",
+        "fix_hint": "Recalcular la liquidación y regenerar el LSD desde e-Sueldos.",
+    },
+    "LSD-REG04-BASE9-001": {
+        "severidad": "ADVERTENCIA",
+        "campo": "REG04 Base 9",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Base 9 supera Base 1 sin conceptos que justifiquen el incremento.",
+        "fix_hint": "Revisar conceptos no remunerativos, detracción y parametrización de bases antes de exportar.",
+    },
+    "LSD-REG04-BASE9-002": {
+        "severidad": "CRITICO",
+        "campo": "REG04 Base 9",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Base 9 no puede superar Base 2.",
+        "fix_hint": "Recalcular bases imponibles y regenerar el LSD.",
+    },
+    "LSD-REG04-BASE9-003": {
+        "severidad": "CRITICO",
+        "campo": "REG04 Base 9",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Base 9 informa el total sin tope mientras Base 1/4 están topadas (MOPRE).",
+        "fix_hint": "Recalcular detracción/topes y regenerar el REG04 desde e-Sueldos.",
+    },
+    "LSD-REG04-BASE2-001": {
+        "severidad": "ADVERTENCIA",
+        "campo": "REG04 Base 2",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "Base 2 en cero con Base 4 positiva indica REG04 inconsistente.",
+        "fix_hint": "Regenerar la liquidación completa del empleado y volver a exportar el LSD.",
+    },
+    "LSD-REG04-REM10-001": {
+        "severidad": "CRITICO",
+        "campo": "REG04 Rem10 / detracción",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Sin importe de detracción, Rem10 (Base imponible 10) debe ser cero.",
+        "fix_hint": "Recalcular detracción Ley 27.430 en e-Sueldos y regenerar el LSD.",
     },
 }
 
@@ -911,6 +974,109 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
                     "raw_reg03_relacionados": _raws_conceptos(conceptos, codigos_relacionados),
                 },
             )
+
+        base5 = reg.get("base5")
+        base9 = reg.get("base9")
+        tolerancia = Decimal("0.01")
+
+        if base4 is not None and base5 is not None and base4 > 0 and base5 > 0:
+            if abs(base4 - base5) > tolerancia:
+                _add_issue(
+                    issues,
+                    "LSD-REG04-BASE4-BASE5-001",
+                    linea=reg["linea"],
+                    cuil=reg["cuil"],
+                    detalle={
+                        "base4": reg["base4_raw"],
+                        "base5": reg["base5_raw"],
+                        "diferencia": str(abs(base4 - base5)),
+                    },
+                )
+
+        if base9 is not None and base2 is not None and base2 > Decimal("0") and base9 > base2 + tolerancia:
+            _add_issue(
+                issues,
+                "LSD-REG04-BASE9-002",
+                linea=reg["linea"],
+                cuil=reg["cuil"],
+                detalle={
+                    "base": 9,
+                    "informado": str(base9),
+                    "determinado": str(base2),
+                    "diferencia": str(base9 - base2),
+                    "base2": reg["base2_raw"],
+                    "base9": reg["base9_raw"],
+                },
+            )
+
+        if (
+            base9 is not None and base2 is not None and base1 is not None
+            and base9 == base2 and base1 < base2 - tolerancia
+            and base4 is not None and abs(base4 - base1) <= tolerancia
+        ):
+            _add_issue(
+                issues,
+                "LSD-REG04-BASE9-003",
+                linea=reg["linea"],
+                cuil=reg["cuil"],
+                detalle={
+                    "base": 9,
+                    "informado": str(base9),
+                    "determinado": str(base1),
+                    "diferencia": str(base9 - base1),
+                    "base1": reg["base1_raw"],
+                    "base2": reg["base2_raw"],
+                    "base4": reg["base4_raw"],
+                    "base9": reg["base9_raw"],
+                },
+            )
+
+        if base2 is not None and base2 == 0 and base4 is not None and base4 > 0:
+            _add_issue(
+                issues,
+                "LSD-REG04-BASE2-001",
+                linea=reg["linea"],
+                cuil=reg["cuil"],
+                detalle={
+                    "base2": reg["base2_raw"],
+                    "base4": reg["base4_raw"],
+                },
+            )
+
+        if (
+            base1 is not None and base9 is not None
+            and base9 > base1 + tolerancia
+            and concepto_0577 <= Decimal("0")
+            and not (concepto_0448 > Decimal("0") and rem is not None and base9 > rem)
+            and not (conceptos_incremento_no_rem > Decimal("0") and base9 > base1 * Decimal("2"))
+        ):
+            _add_issue(
+                issues,
+                "LSD-REG04-BASE9-001",
+                linea=reg["linea"],
+                cuil=reg["cuil"],
+                detalle={
+                    "base": 9,
+                    "informado": str(base9),
+                    "determinado": str(base1),
+                    "diferencia": str(base9 - base1),
+                    "base1": reg["base1_raw"],
+                    "base9": reg["base9_raw"],
+                },
+            )
+
+        if importe_detraer is not None and base10 is not None:
+            if importe_detraer == Decimal("0") and base10 > Decimal("0"):
+                _add_issue(
+                    issues,
+                    "LSD-REG04-REM10-001",
+                    linea=reg["linea"],
+                    cuil=reg["cuil"],
+                    detalle={
+                        "importe_detraer": reg["importe_detraer_raw"],
+                        "rem10": reg["base10_raw"],
+                    },
+                )
 
     periodo_mes = None
     if len(reg01s) == 1 and re.fullmatch(r'\d{6}', reg01s[0].get("periodo", "") or ""):

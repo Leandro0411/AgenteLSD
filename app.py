@@ -17,9 +17,7 @@ from flask import Flask, render_template, request, Response, jsonify, session
 
 sys.path.insert(0, os.path.dirname(__file__))
 from agente_lsd import (
-    TOOL_DECLARATIONS, TOOL_FUNCTIONS,
-    TOOL_DECLARATIONS_ALL, TOOL_FUNCTIONS_ALL,
-    SYSTEM_PROMPT, MODELO,
+    SYSTEM_PROMPT, MODELO, RULE_CATALOG,
     ejecutar_validaciones_deterministicas,
 )
 # correcciones.py desactivado — la corrección la realiza el agente general externo
@@ -32,10 +30,12 @@ from google import genai
 from google.genai import types as gtypes
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
-# Sesiones en memoria: session_id → {ruta_tmp, ruta_errores, messages, estado}
+SESION_TTL_SEG = int(os.environ.get('SESION_TTL_SEG', '3600'))
+
+# Sesiones en memoria: session_id → {ruta, informe, creado, ...}
 SESIONES: dict[str, dict] = {}
 
 TOOL_LABELS = {
@@ -55,8 +55,6 @@ TOOL_LABELS = {
     "validar_notacion_cientifica":    "Verificando campos numéricos (notación científica)...",
     "validar_rem_bruta_reg04":        "Controlando coherencia Rem. Bruta / Base SIPA...",
     "validar_sac_fuera_de_periodo":   "Verificando conceptos SAC en el período...",
-    "parsear_errores_arca":           "Leyendo errores de ARCA...",
-    "cruzar_errores_con_lsd":         "Cruzando errores ARCA con el libro digital...",
 }
 
 # ── System prompts ─────────────────────────────────────────────────────────────
@@ -180,6 +178,97 @@ REGLAS ADICIONALES:
 """
 
 
+# ── Sesiones y temporales ──────────────────────────────────────────────────────
+
+def _limpiar_sesiones_expiradas() -> None:
+    ahora = time.time()
+    expiradas = [
+        sid for sid, ses in SESIONES.items()
+        if ahora - ses.get('creado', ahora) > SESION_TTL_SEG
+    ]
+    for sid in expiradas:
+        _eliminar_sesion(sid)
+
+
+def _eliminar_sesion(session_id: str) -> None:
+    sesion = SESIONES.pop(session_id, None)
+    if not sesion:
+        return
+    for clave in ('ruta',):
+        ruta = sesion.get(clave)
+        if ruta and os.path.isfile(ruta):
+            try:
+                os.remove(ruta)
+            except OSError:
+                pass
+
+
+INFORME_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "resumen": {"type": "string"},
+        "veredicto": {"type": "string", "enum": ["PRESENTABLE", "SERÁ RECHAZADO", "REVISAR"]},
+        "veredicto_razon": {"type": "string"},
+        "estadisticas": {
+            "type": "object",
+            "properties": {
+                "total_empleados": {"type": "integer"},
+                "total_conceptos": {"type": "integer"},
+                "errores_criticos": {"type": "integer"},
+                "advertencias": {"type": "integer"},
+            },
+            "required": ["total_empleados", "total_conceptos", "errores_criticos", "advertencias"],
+        },
+        "errores_arca": {
+            "type": "object",
+            "properties": {
+                "presente": {"type": "boolean"},
+                "total": {"type": "integer"},
+                "resumen": {"type": "string"},
+            },
+            "required": ["presente", "total", "resumen"],
+        },
+        "problemas": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "severidad": {"type": "string", "enum": ["CRITICO", "ADVERTENCIA", "INFO"]},
+                    "titulo": {"type": "string"},
+                    "descripcion": {"type": "string"},
+                    "cuils_afectados": {"type": "integer"},
+                    "todos_los_cuils_afectados": {"type": "array", "items": {"type": "string"}},
+                    "ejemplos_cuil": {"type": "array", "items": {"type": "string"}},
+                    "causa": {"type": "string"},
+                    "solucion": {"type": "string"},
+                    "tutorial_pasos": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "paso": {"type": "integer"},
+                                "titulo": {"type": "string"},
+                                "instruccion": {"type": "string"},
+                                "referencia": {"type": "string"},
+                            },
+                            "required": ["paso", "titulo", "instruccion", "referencia"],
+                        },
+                    },
+                    "diagnostico_cruce": {"type": "string"},
+                    "diferencias_por_cuil": {"type": "array", "items": {"type": "object"}},
+                },
+                "required": [
+                    "id", "severidad", "titulo", "descripcion", "cuils_afectados",
+                    "todos_los_cuils_afectados", "causa", "solucion", "tutorial_pasos",
+                ],
+            },
+        },
+    },
+    "required": ["resumen", "veredicto", "veredicto_razon", "estadisticas", "errores_arca", "problemas"],
+}
+
+
 # ── Cliente Gemini ─────────────────────────────────────────────────────────────
 
 def _get_client() -> genai.Client | None:
@@ -235,88 +324,145 @@ def _es_fin(response) -> bool:
         return True
 
 
-def _informe_basico_deterministico(validacion: dict, arca_contexto: dict | None = None) -> dict:
+def _informe_basico_deterministico(validacion: dict) -> dict:
+    problemas = _construir_problemas_desde_validacion(validacion)
+    veredicto = _veredicto_desde_validacion(validacion)
+    return {
+        "resumen": _resumen_desde_validacion(validacion, problemas, veredicto),
+        "veredicto": veredicto,
+        "veredicto_razon": _razon_veredicto(validacion, problemas, veredicto),
+        "estadisticas": _calcular_estadisticas_informe(validacion, problemas),
+        "errores_arca": {"presente": False, "total": 0, "resumen": ""},
+        "problemas": problemas,
+    }
+
+
+def _veredicto_desde_validacion(validacion: dict) -> str:
+    if validacion.get("errores_criticos", 0) > 0:
+        return "SERÁ RECHAZADO"
+    if validacion.get("advertencias", 0) > 0:
+        return "REVISAR"
+    return "PRESENTABLE"
+
+
+def _construir_problemas_desde_validacion(
+    validacion: dict,
+    tutoriales_por_id: dict[str, list] | None = None,
+) -> list[dict]:
     issues = validacion.get("issues", [])
-    criticos = [i for i in issues if i.get("severidad") == "CRITICO"]
-    advertencias = [i for i in issues if i.get("severidad") == "ADVERTENCIA"]
-    stats = validacion.get("indices", {})
-    problemas = []
     agrupados: dict[str, list[dict]] = defaultdict(list)
     for issue in issues:
         agrupados[issue["id"]].append(issue)
 
-    for rule_id, items in agrupados.items():
+    tutoriales_por_id = tutoriales_por_id or {}
+    problemas = []
+    for rule_id, items in sorted(agrupados.items()):
         first = items[0]
+        regla = RULE_CATALOG.get(rule_id, {})
         cuils = sorted({i.get("cuil") for i in items if i.get("cuil")})
+        mensaje = regla.get("mensaje") or first.get("mensaje", "")
+        fix_hint = regla.get("fix_hint") or first.get("fix_hint", "")
+        tutorial = tutoriales_por_id.get(rule_id) or _tutorial_basico(mensaje, fix_hint, regla.get("fuente_pdf", ""))
         problemas.append({
             "id": rule_id,
-            "severidad": first.get("severidad", "INFO"),
-            "titulo": first.get("campo", rule_id),
-            "descripcion": first.get("mensaje", ""),
+            "severidad": regla.get("severidad") or first.get("severidad", "INFO"),
+            "titulo": mensaje,
+            "descripcion": mensaje,
             "cuils_afectados": len(cuils),
             "todos_los_cuils_afectados": cuils,
             "ejemplos_cuil": cuils[:5],
-            "causa": first.get("mensaje", ""),
-            "solucion": first.get("fix_hint", ""),
-            "tutorial_pasos": [
-                {
-                    "paso": 1,
-                    "titulo": "Revisar el origen",
-                    "instruccion": first.get("mensaje", "Revisá el dato indicado por la validación."),
-                    "referencia": first.get("fuente_pdf", ""),
-                },
-                {
-                    "paso": 2,
-                    "titulo": "Corregir en e-Sueldos",
-                    "instruccion": first.get("fix_hint", "Corregí el dato en e-Sueldos."),
-                    "referencia": first.get("fuente_pdf", ""),
-                },
-                {
-                    "paso": 3,
-                    "titulo": "Recalcular",
-                    "instruccion": "Recalculá la liquidación o el Libro Sueldo Digital desde e-Sueldos.",
-                    "referencia": first.get("fuente_pdf", ""),
-                },
-                {
-                    "paso": 4,
-                    "titulo": "Validar nuevamente",
-                    "instruccion": "Volvé a exportar el LSD y validalo de nuevo con el Agente.",
-                    "referencia": first.get("fuente_pdf", ""),
-                },
-            ],
+            "causa": mensaje,
+            "solucion": fix_hint,
+            "tutorial_pasos": tutorial,
             "diagnostico_cruce": "",
             "diferencias_por_cuil": _diferencias_desde_issues(items),
             "detalle_tecnico": _detalle_tecnico_problema(rule_id, items),
         })
+    return problemas
 
-    veredicto = "SERÁ RECHAZADO" if criticos else ("REVISAR" if advertencias else "PRESENTABLE")
-    if veredicto == "PRESENTABLE":
-        razon = "El motor determinístico no encontró errores críticos ni advertencias."
-        resumen = "El archivo respeta las reglas determinísticas del layout LSD validadas por el agente."
-    elif veredicto == "REVISAR":
-        razon = f"Hay {len(advertencias)} advertencia(s) para revisar antes de presentar."
-        resumen = "El archivo no tiene errores críticos determinísticos, pero conviene revisar las advertencias."
-    else:
-        razon = f"Hay {len(criticos)} error(es) crítico(s) determinísticos."
-        resumen = "El archivo tiene errores críticos de estructura o formato que pueden causar rechazo."
+
+def _tutorial_basico(mensaje: str, fix_hint: str, fuente: str) -> list[dict]:
+    return [
+        {"paso": 1, "titulo": "Revisar el origen", "instruccion": mensaje or "Revisá el dato indicado.", "referencia": fuente},
+        {"paso": 2, "titulo": "Corregir en e-Sueldos", "instruccion": fix_hint or "Corregí el dato en e-Sueldos.", "referencia": fuente},
+        {"paso": 3, "titulo": "Recalcular", "instruccion": "Recalculá la liquidación o el Libro Sueldo Digital desde e-Sueldos.", "referencia": fuente},
+        {"paso": 4, "titulo": "Validar nuevamente", "instruccion": "Volvé a exportar el LSD y validalo de nuevo con el Agente.", "referencia": fuente},
+    ]
+
+
+def _calcular_estadisticas_informe(validacion: dict, problemas: list[dict]) -> dict:
+    issues = validacion.get("issues", [])
+    stats = validacion.get("indices", {})
+    total_emp = stats.get("empleados", 0)
+
+    cuils_crit = {i.get("cuil") for i in issues if i.get("severidad") == "CRITICO" and i.get("cuil")}
+    cuils_adv = {i.get("cuil") for i in issues if i.get("severidad") == "ADVERTENCIA" and i.get("cuil")}
+    cuils_adv_solo = cuils_adv - cuils_crit
+    cuils_afectados = cuils_crit | cuils_adv_solo
+
+    tipos_crit = sum(1 for p in problemas if (p.get("severidad") or "").upper() == "CRITICO")
+    tipos_adv = sum(1 for p in problemas if (p.get("severidad") or "").upper() == "ADVERTENCIA")
+    det_crit = sum(1 for i in issues if i.get("severidad") == "CRITICO")
+    det_adv = sum(1 for i in issues if i.get("severidad") == "ADVERTENCIA")
 
     return {
-        "resumen": resumen,
-        "veredicto": veredicto,
-        "veredicto_razon": razon,
-        "estadisticas": {
-            "total_empleados": stats.get("empleados", 0),
-            "total_conceptos": validacion.get("registros_por_tipo", {}).get("03", 0),
-            "errores_criticos": len(criticos),
-            "advertencias": len(advertencias),
-        },
-        "errores_arca": {
-            "presente": bool(arca_contexto),
-            "total": 0,
-            "resumen": "",
-        },
-        "problemas": problemas,
+        "total_empleados": total_emp,
+        "total_conceptos": validacion.get("registros_por_tipo", {}).get("03", 0),
+        "empleados_afectados_critico": len(cuils_crit),
+        "empleados_afectados_advertencia": len(cuils_adv_solo),
+        "empleados_validados": max(total_emp - len(cuils_afectados), 0),
+        "tipos_error_critico": tipos_crit,
+        "tipos_error_advertencia": tipos_adv,
+        "detecciones_criticas": det_crit,
+        "detecciones_advertencia": det_adv,
+        # Compatibilidad con historial / código legado
+        "errores_criticos": len(cuils_crit),
+        "advertencias": len(cuils_adv_solo),
     }
+
+
+def _razon_veredicto(validacion: dict, problemas: list[dict], veredicto: str) -> str:
+    stats = _calcular_estadisticas_informe(validacion, problemas)
+    total_emp = stats["total_empleados"]
+    if veredicto == "PRESENTABLE":
+        return f"Los {total_emp} empleados del archivo pasaron las validaciones determinísticas."
+    if veredicto == "REVISAR":
+        adv = stats["empleados_afectados_advertencia"]
+        tipos = stats["tipos_error_advertencia"]
+        return f"{adv} empleado(s) con advertencia · {tipos} tipo(s) de problema · {stats['detecciones_advertencia']} detecciones"
+    crit = stats["empleados_afectados_critico"]
+    tipos = stats["tipos_error_critico"]
+    det = stats["detecciones_criticas"]
+    return f"{crit} de {total_emp} empleados con error crítico · {tipos} tipo(s) de problema · {det} detecciones"
+
+
+def _resumen_desde_validacion(validacion: dict, problemas: list[dict], veredicto: str) -> str:
+    if veredicto == "PRESENTABLE":
+        return "El archivo respeta las reglas determinísticas del layout LSD validadas por el agente."
+    if veredicto == "REVISAR":
+        return "El archivo no tiene errores críticos determinísticos, pero conviene revisar las advertencias antes de presentar."
+    tipos = _calcular_estadisticas_informe(validacion, problemas)["tipos_error_critico"]
+    return (
+        f"Se detectaron inconsistencias en bases imponibles y REG04 en {tipos} tipo(s) de regla. "
+        "Corregilas en e-Sueldos y regenerá el LSD antes de presentar a ARCA."
+    )
+
+
+def _finalizar_informe(informe: dict, validacion: dict) -> dict:
+    """Reemplaza problemas y métricas con datos determinísticos; conserva tutorial_pasos de la IA."""
+    tutoriales = {
+        p.get("id"): p.get("tutorial_pasos")
+        for p in (informe.get("problemas") or [])
+        if p.get("id") and p.get("tutorial_pasos")
+    }
+    problemas = _construir_problemas_desde_validacion(validacion, tutoriales)
+    veredicto = _veredicto_desde_validacion(validacion)
+    informe["problemas"] = problemas
+    informe["veredicto"] = veredicto
+    informe["veredicto_razon"] = _razon_veredicto(validacion, problemas, veredicto)
+    informe["estadisticas"] = _calcular_estadisticas_informe(validacion, problemas)
+    informe["resumen"] = _resumen_desde_validacion(validacion, problemas, veredicto)
+    return _adjuntar_detalle_tecnico(informe, validacion)
 
 
 def _detalle_tecnico_problema(rule_id: str, items: list[dict], limite: int = 30) -> dict:
@@ -397,8 +543,6 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
         q.put({"tipo": "error", "mensaje": "Sesión no encontrada."}); q.put(None); return
 
     ruta          = sesion['ruta']
-    ruta_err      = sesion.get('ruta_errores')
-    tiene_errores = ruta_err is not None
     modo          = sesion.get('modo', 'auto')
 
     q.put({"tipo": "herramienta", "nombre": "validacion_deterministica",
@@ -408,31 +552,17 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
     except Exception as exc:
         q.put({"tipo": "error", "mensaje": f"Error validando TXT: {exc}"}); q.put(None); return
 
-    arca_contexto = None
-    if tiene_errores:
-        try:
-            from validador_errores import tool_parsear_errores_arca, tool_cruzar_errores_con_lsd
-            q.put({"tipo": "herramienta", "nombre": "parsear_errores_arca",
-                   "label": TOOL_LABELS.get("parsear_errores_arca", "Leyendo errores ARCA...")})
-            errores_arca = tool_parsear_errores_arca(ruta_err)
-            q.put({"tipo": "herramienta", "nombre": "cruzar_errores_con_lsd",
-                   "label": TOOL_LABELS.get("cruzar_errores_con_lsd", "Cruzando errores ARCA...")})
-            cruce_arca = tool_cruzar_errores_con_lsd(ruta_err, ruta)
-            arca_contexto = {"errores_arca": errores_arca, "cruce_arca": cruce_arca}
-        except Exception as exc:
-            arca_contexto = {"error": str(exc)}
-
     sesion['validacion_deterministica'] = deterministico
 
     if modo == "rapido":
-        informe = _informe_basico_deterministico(deterministico, arca_contexto)
+        informe = _informe_basico_deterministico(deterministico)
         informe["modo_analisis"] = "rapido"
         sesion['informe'] = informe
         q.put({"tipo": "informe", "data": informe})
         q.put(None)
         return
 
-    if modo == "auto" and deterministico.get("errores_criticos", 0) == 0 and deterministico.get("advertencias", 0) == 0 and not arca_contexto:
+    if modo == "auto" and deterministico.get("errores_criticos", 0) == 0 and deterministico.get("advertencias", 0) == 0:
         informe = _informe_basico_deterministico(deterministico)
         informe["modo_analisis"] = "auto_sin_ia"
         sesion['informe'] = informe
@@ -442,7 +572,7 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
 
     client = _get_client()
     if not client:
-        informe = _informe_basico_deterministico(deterministico, arca_contexto)
+        informe = _informe_basico_deterministico(deterministico)
         sesion['informe'] = informe
         q.put({"tipo": "informe", "data": informe})
         q.put(None)
@@ -458,12 +588,10 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
     msg_texto = (
         "Convertí el siguiente resultado de validación determinística en el informe JSON estructurado "
         "de la interfaz. NO ejecutes validaciones nuevas ni inventes errores: usá únicamente los issues "
-        "del JSON determinístico y, si existe, el contexto de errores ARCA.\n\n"
+        "del JSON determinístico.\n\n"
         f"Archivo LSD: {os.path.abspath(ruta)}\n"
         f"Validación determinística:\n{json.dumps(deterministico, ensure_ascii=False, indent=2)}\n\n"
     )
-    if arca_contexto:
-        msg_texto += f"Contexto ARCA:\n{json.dumps(arca_contexto, ensure_ascii=False, indent=2)}\n\n"
     msg_texto += "Respondé ÚNICAMENTE con el JSON estructurado solicitado por el sistema."
 
     if pdf_parts:
@@ -472,6 +600,8 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
     config = gtypes.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT_ANALISIS,
         temperature=0.1,
+        response_mime_type="application/json",
+        response_schema=INFORME_RESPONSE_SCHEMA,
     )
 
     # Historial: texto + PDFs opcionales en el primer mensaje
@@ -511,7 +641,7 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
                 texto = texto[4:]
         try:
             informe = json.loads(texto.strip())
-            informe = _adjuntar_detalle_tecnico(informe, deterministico)
+            informe = _finalizar_informe(informe, deterministico)
             sesion['informe'] = informe
             sesion['historial_analisis'] = historial
             q.put({"tipo": "informe", "data": informe})
@@ -535,6 +665,7 @@ def index():
 
 @app.route('/analizar', methods=['POST'])
 def analizar():
+    _limpiar_sesiones_expiradas()
     if 'archivo' not in request.files:
         return jsonify({"error": "No se recibió archivo"}), 400
     archivo = request.files['archivo']
@@ -548,31 +679,20 @@ def analizar():
         archivo.save(tmp)
         ruta_tmp = tmp.name
 
-    ruta_errores = None
-    if 'archivo_errores' in request.files:
-        f_err = request.files['archivo_errores']
-        if f_err and f_err.filename and f_err.filename.lower().endswith('.txt'):
-            with tempfile.NamedTemporaryFile(
-                mode='wb', suffix='.txt', delete=False, prefix='err_arca_'
-            ) as tmp_err:
-                f_err.save(tmp_err)
-                ruta_errores = tmp_err.name
-
     session_id = str(uuid.uuid4())
     SESIONES[session_id] = {
         'ruta':              ruta_tmp,
-        'ruta_errores':      ruta_errores,
-        'tiene_errores':     ruta_errores is not None,
         'modo':              modo,
         'informe':           None,
-        'historial_analisis': []
+        'historial_analisis': [],
+        'creado':            time.time(),
     }
 
     def generar():
         q = queue.Queue()
         t = threading.Thread(target=ejecutar_analisis, args=(session_id, q), daemon=True)
         t.start()
-        yield f"data: {json.dumps({'tipo': 'session', 'session_id': session_id, 'tiene_errores': ruta_errores is not None})}\n\n"
+        yield f"data: {json.dumps({'tipo': 'session', 'session_id': session_id})}\n\n"
         while True:
             try:
                 ev = q.get(timeout=120)
@@ -645,16 +765,22 @@ Recordatorio de formato oficial relevante:
     contenido = [
         gtypes.Part.from_text(text="Contexto disponible de la sesión:\n" + json.dumps(contexto, ensure_ascii=False, indent=2))
     ]
+    historial_chat: list[gtypes.Content] = [
+        gtypes.Content(role="user", parts=contenido)
+    ]
     for m in messages[-12:]:
         role = "model" if m.get("role") == "assistant" else "user"
-        text = str(m.get("content") or "")
-        if text.strip():
-            contenido.append(gtypes.Part.from_text(text=f"{role.upper()}: {text}"))
+        text = str(m.get("content") or "").strip()
+        if text:
+            historial_chat.append(gtypes.Content(
+                role=role,
+                parts=[gtypes.Part.from_text(text=text)],
+            ))
 
     try:
         resp = client.models.generate_content(
             model=MODELO,
-            contents=[gtypes.Content(role="user", parts=contenido)],
+            contents=historial_chat,
             config=gtypes.GenerateContentConfig(
                 system_instruction=system_chat,
                 temperature=0.2,
