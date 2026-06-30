@@ -2387,6 +2387,195 @@ main {
     margin-top: 2px;
 }
 
+/* ─── ESTADÍSTICAS HISTÓRICAS (TAB FRECUENTES) ──────────────────── */
+.sh-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--rg);
+    padding: 20px;
+    margin-block-end: 24px;
+    box-shadow: var(--shadow-s);
+}
+
+.sh-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-block-end: 20px;
+}
+
+.sh-kpi {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sh-kpi-val {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--txt-hi);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+
+.sh-kpi-label {
+    font-size: 11px;
+    color: var(--txt-lo);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
+
+.sh-kpi-ico {
+    font-size: 18px;
+    margin-block-end: 4px;
+}
+
+.sh-graficos {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.sh-panel {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 16px 18px;
+}
+
+.sh-panel-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: var(--txt-lo);
+    margin-block-end: 16px;
+}
+
+.sh-barra-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-block-end: 10px;
+}
+
+.sh-barra-row:last-child {
+    margin-block-end: 0;
+}
+
+.sh-barra-label {
+    width: 140px;
+    flex-shrink: 0;
+    color: var(--txt-mid);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.sh-barra-track {
+    flex: 1;
+    height: 14px;
+    background: var(--border);
+    border-radius: 7px;
+    overflow: hidden;
+}
+
+.sh-barra-fill {
+    height: 100%;
+    border-radius: 7px;
+    transition: width .6s cubic-bezier(.4,0,.2,1);
+}
+
+/* Usando tus variables de estado ya definidas */
+.sh-barra-fill.critico     { background: var(--err); }
+.sh-barra-fill.advertencia { background: var(--warn); }
+
+.sh-barra-count {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--txt-lo);
+    font-variant-numeric: tabular-nums;
+    min-width: 24px;
+    text-align: right;
+}
+
+.sh-vacio {
+    text-align: center;
+    padding: 30px 0 10px;
+    color: var(--txt-lo);
+    font-size: 13px;
+    line-height: 1.8;
+}
+
+#sh-spark-wrap {
+    overflow: hidden;
+    border-radius: var(--r);
+    background: var(--surface); /* Fondo blanco para contraste de la línea SVG */
+    border: 1px solid var(--border);
+    padding: 10px 0 0;
+}
+
+/* ─── AJUSTES DE ANCHO Y PRIORIDAD GRÁFICOS (TAB FRECUENTES) ─── */
+
+/* 1. Expandir el ancho máximo del contenedor principal SOLO en este tab */
+#tab-frecuentes main {
+    max-width: 1400px; /* Aprovecha mucho más el ancho de la pantalla */
+    padding-inline: 40px; /* Un poco más de respiro lateral */
+}
+
+/* 2. Dar más espacio al contenedor de estadísticas y empujar la lista estática abajo */
+.sh-wrap {
+    padding: 30px;
+    margin-block-end: 60px; /* Empuja la lista de errores estáticos bien abajo */
+    box-shadow: var(--shadow-m); /* Le da un poco más de relieve/importancia */
+}
+
+/* 3. Hacer que los gráficos se apilen uno abajo del otro para ocupar todo el ancho */
+.sh-graficos {
+    display: flex;
+    flex-direction: column;
+    gap: 32px; /* Separación generosa entre el de barras y la evolución */
+}
+
+/* 4. Solucionar el corte de texto en las barras ("Diferencia en Base de...") */
+.sh-barra-label {
+    width: 380px; /* Antes era 140px, ahora tiene muchísimo más espacio */
+    white-space: normal; /* Permite que el texto ocupe dos líneas si hace falta */
+    overflow: visible;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+/* Alinear mejor las barras si el texto pasa a ocupar dos líneas */
+.sh-barra-row {
+    gap: 20px;
+    margin-block-end: 18px;
+    align-items: flex-start; /* Alinea la barra con la parte de arriba del texto */
+}
+
+.sh-barra-track {
+    margin-top: 2px; /* Centra visualmente la barra con la primera línea de texto */
+}
+
+/* 5. Ajustar los KPIs (Tarjetas superiores) para que respiren mejor */
+.sh-kpis {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-block-end: 32px;
+}
+
+.sh-kpi-val {
+    font-size: 22px;
+    line-height: 1.3;
+}
+
 /* ─── RESPONSIVE ────────────────────────────────────────────────── */
 @media(max-width:600px) {
     header {

@@ -3,6 +3,7 @@
 """
 agente_lsd.py — Agente Gemini de validación LSD (Libro Sueldo Digital) para ARCA/AFIP
 =======================================================================================
+
 [Misma funcionalidad que la versión Anthropic, adaptado a Google Gemini 3.5 Flash]
 
 USO:
@@ -10,9 +11,6 @@ USO:
     python agente_lsd.py ErroresValidacion_30663343501_20260507.txt
 
 REQUISITOS:
-    pip install google-genai
-    Variable de entorno: GEMINI_API_KEY=AIza...
-
     Opcional (base de conocimiento PDF):
     Correr primero: python knowledge_loader.py
 """
@@ -1630,7 +1628,7 @@ PRECHECKS = [
 
 
 # ---------------------------------------------------------------------------
-# System prompt (idéntico al original)
+# System prompt
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """Eres un experto en el módulo "LSD Nuevo" (Libro Sueldo Digital v2) del sistema e-SUELDOS

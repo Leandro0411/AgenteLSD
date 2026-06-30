@@ -199,229 +199,28 @@
             </div>
             <span class="te-badge">Drill-down consultor</span>
           </div>
+
+          <div id="stats-historico" class="sh-wrap">
+            <div class="sh-kpis" id="sh-kpis"></div>
+            <div class="sh-graficos">
+              <div class="sh-panel">
+                <div class="sh-panel-title">Errores más frecuentes (acumulado)</div>
+                <div id="sh-barras" class="sh-barras-wrap"></div>
+              </div>
+              <div class="sh-panel">
+                <div class="sh-panel-title">Evolución — errores críticos por análisis</div>
+                <div id="sh-spark-wrap">
+                  <svg id="sh-spark" width="100%" height="90" viewBox="0 0 400 90" preserveAspectRatio="none"></svg>
+                </div>
+              </div>
+            </div>
+            <div class="sh-vacio" id="sh-vacio" style="display:none">
+              <span style="font-size:32px">📊</span>
+              <p>Todavía no hay estadísticas.<br>Analizá al menos un archivo LSD para empezar.</p>
+            </div>
+          </div>
+
           <div id="te-lista">
-
-            <!-- 01 -->
-            <div class="te-card critico">
-              <div class="te-card-head">
-                <span class="te-rank">01</span><span class="te-icono">!</span>
-                <div class="te-card-head-txt"><div class="te-titulo">Relación laboral no vigente</div><div class="te-desc">ARCA no encuentra una relación activa para el CUIL.</div></div>
-                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Alta temprana, fecha de ingreso/egreso, CUIT empleador y CUIL del trabajador en Simplificación Registral.</div></div>
-                <div class="te-sol-box">Corregir la relación laboral o fechas registrales y volver a exportar el LSD.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div><strong>Verificar en Simplificación Registral (Mi ARCA)</strong> que el CUIL esté dado de alta con el CUIT del empleador y las fechas correctas.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div><strong>En e-Sueldos → Empleados</strong>, controlar que la fecha de ingreso y egreso coincidan con la vigencia registral.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>Si el empleado fue dado de baja y reingresó, asegurarse de que haya un alta nueva antes del período liquidado.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>Regenerar el LSD desde <strong>Exportaciones → Libro Sueldo Digital</strong> y volver a validar.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 02 -->
-            <div class="te-card critico">
-              <div class="te-card-head">
-                <span class="te-rank">02</span><span class="te-icono">BI</span>
-                <div class="te-card-head-txt"><div class="te-titulo">Bases imponibles diferentes</div><div class="te-desc">REG04 informa bases que no coinciden con lo calculado por ARCA.</div></div>
-                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Conceptos REG03, parametrización de bases, detracción, topes y conceptos no remunerativos que impactan Base 1, 4, 5 o 9.</div></div>
-                <div class="te-sol-box">Revisar impacto de conceptos, recalcular liquidación y regenerar REG04.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div>En e-Sueldos, abrir el empleado afectado y verificar la <strong>parametrización de conceptos</strong>: signo D/C, base imponible asignada (1, 4, 5 o 9) y topes.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div>Revisar si aplica <strong>detracción mínima</strong> (Guía ARCA N°45): el concepto 560.000 se usa para empleados en relación de dependencia; 570.000 para casos especiales.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>Verificar conceptos no remunerativos que impactan Base 9 (OS) o Base 4 (INSSJP): deben estar marcados correctamente.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>Ir a <strong>Liquidaciones → Recalcular</strong> para regenerar REG04 con los valores corregidos.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">5</span><div>Exportar nuevamente el TXT y verificar con el Agente LSD antes de presentar.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 03 -->
-            <div class="te-card critico">
-              <div class="te-card-head">
-                <span class="te-rank">03</span><span class="te-icono">%</span>
-                <div class="te-card-head-txt"><div class="te-titulo">Aportes SS/OS mal calculados</div><div class="te-desc">El porcentaje aplicado no corresponde a la base imponible declarada.</div></div>
-                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Obra social, sindicato, modalidad, bases topeadas, aportes adicionales y configuración del concepto.</div></div>
-                <div class="te-sol-box">Actualizar parámetros de aportes/contribuciones y recalcular.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div>Verificar en <strong>Parámetros → Escala salarial</strong> que los porcentajes de OS y SS estén actualizados al período.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div>Revisar si el empleado tiene <strong>obra social diferencial</strong> o convenio con alícuota especial que difiera del 3% estándar.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>Controlar topes de base imponible mensual máxima (MOPRE). Si la remuneración supera el tope, el aporte se calcula sobre el tope, no sobre el total.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>Recalcular la liquidación y comparar el REG04 generado con los valores esperados por ARCA.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 04 -->
-            <div class="te-card critico">
-              <div class="te-card-head">
-                <span class="te-rank">04</span><span class="te-icono">C</span>
-                <div class="te-card-head-txt"><div class="te-titulo">Concepto no parametrizado</div><div class="te-desc">El concepto informado no tiene equivalencia o tratamiento válido para LSD.</div></div>
-                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Código de concepto, equivalencia ARCA, signo D/C, unidad, cantidad e impacto en subsistemas.</div></div>
-                <div class="te-sol-box">Parametrizar el concepto y volver a generar REG03.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div>En <strong>Conceptos → Listado</strong>, buscar el concepto con error y verificar si tiene asignado un código ARCA válido (tabla de conceptos del régimen).</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div>Controlar el <strong>signo D/C</strong>: los haberes son D (débito), los descuentos C (crédito). Un signo incorrecto produce REG03 inválido.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>Verificar <strong>unidad de medida</strong> (importe, cantidad, porcentaje) y que el campo cantidad esté completo si corresponde.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>Guardar cambios, recalcular la liquidación y regenerar el TXT.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 05 -->
-            <div class="te-card critico">
-              <div class="te-card-head">
-                <span class="te-rank">05</span><span class="te-icono">REQ</span>
-                <div class="te-card-head-txt"><div class="te-titulo">Datos obligatorios faltantes</div><div class="te-desc">Faltan campos requeridos en REG01, REG02, REG03 o REG04.</div></div>
-                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">CUIT/CUIL, período, cantidad de REG04, fecha de pago, forma de pago, días liquidados y bases.</div></div>
-                <div class="te-sol-box">Completar datos de empresa/empleado/liquidación y exportar otra vez.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div>En <strong>Empresa → Datos generales</strong>: confirmar CUIT, razón social y CUIT de la obra social. Sin estos, REG01 queda incompleto.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div>En <strong>Empleados</strong>: verificar CUIL, fecha de ingreso, categoría y convenio colectivo. Son campos obligatorios para REG02.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>En la liquidación: controlar <strong>fecha de pago, forma de pago y días trabajados</strong>. Si alguno está en cero o vacío, el REG04 se genera incompleto.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>Completar los datos faltantes, guardar y volver a exportar el LSD.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 06 -->
-            <div class="te-card critico">
-              <div class="te-card-head">
-                <span class="te-rank">06</span><span class="te-icono">RB</span>
-                <div class="te-card-head-txt"><div class="te-titulo">Remuneración bruta incoherente</div><div class="te-desc">La remuneración bruta o Base 1 no es consistente con los conceptos REG03.</div></div>
-                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Conceptos remunerativos, descuentos, SAC, vacaciones, licencias y topes de base imponible.</div></div>
-                <div class="te-sol-box">Recalcular acumuladores de la liquidación y validar REG04.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div>Sumar manualmente los conceptos <strong>remunerativos haberes (D)</strong> del recibo y comparar con la Base 1 que figura en el REG04 del TXT.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div>Verificar que ningún concepto remunerativo esté marcado como "no impacta en base 1" por error de parametrización.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>Revisar si hay <strong>SAC proporcional o vacaciones</strong> que deben sumarse a la remuneración bruta del período.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>Ir a <strong>Liquidaciones → Recalcular</strong>, confirmar la operación y volver a exportar el TXT.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 07 -->
-            <div class="te-card critico">
-              <div class="te-card-head">
-                <span class="te-rank">07</span><span class="te-icono">DUP</span>
-                <div class="te-card-head-txt"><div class="te-titulo">REG04 duplicado por CUIL</div><div class="te-desc">Un empleado con más de un legajo puede generar bases duplicadas.</div></div>
-                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Multi-legajo, consolidación por CUIL, acumulación de bases y días trabajados.</div></div>
-                <div class="te-sol-box">Consolidar un solo REG04 por CUIL y sumar correctamente las bases.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div>Buscar en e-Sueldos todos los legajos asociados al mismo CUIL. Puede ocurrir con empleados que tienen contrato principal + horas extras como legajo separado.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div>ARCA exige <strong>un único REG04 por CUIL</strong>. Las bases de todos los legajos deben consolidarse sumando Base 1, 4, 5 y 9.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>En la configuración de exportación LSD, activar la opción <strong>"Consolidar REG04 por CUIL"</strong> si está disponible.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>Regenerar el TXT y verificar que el CUIL aparezca una sola vez en la exportación.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 08 -->
-            <div class="te-card critico">
-              <div class="te-card-head">
-                <span class="te-rank">08</span><span class="te-icono">CBU</span>
-                <div class="te-card-head-txt"><div class="te-titulo">CBU inválido</div><div class="te-desc">Si forma de pago es 3, el CBU debe tener 22 dígitos en REG02.</div></div>
-                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">REG02 posiciones 74-95 y forma de pago posición 115. El CBU no va en REG04.</div></div>
-                <div class="te-sol-box">Completar CBU válido o cambiar forma de pago y exportar.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div>En <strong>Empleados → Datos bancarios</strong>, ingresar el CBU completo de 22 dígitos. Verificar que no tenga espacios ni guiones.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div>Confirmar que la <strong>forma de pago</strong> del empleado esté configurada como "3 - Acreditación en cuenta" si tiene CBU.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>Si el empleado cobra en efectivo o cheque, cambiar la forma de pago a "1" o "2" y dejar el campo CBU en ceros.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>Regenerar el TXT y validar que el CBU aparezca en las posiciones 74-95 del REG02.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 09 -->
-            <div class="te-card critico">
-              <div class="te-card-head">
-                <span class="te-rank">09</span><span class="te-icono">123</span>
-                <div class="te-card-head-txt"><div class="te-titulo">Formato numérico incorrecto</div><div class="te-desc">Campos con comas, signos, notación científica o longitud inválida.</div></div>
-                <span class="te-sev critico">CRITICO</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Importes de REG03/REG04, centavos implícitos, ceros a izquierda y ausencia de separadores.</div></div>
-                <div class="te-sol-box">Normalizar formato numérico desde el origen y regenerar el TXT.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div>Los importes en el TXT van <strong>sin separador de miles ni coma decimal</strong>. El formato es entero con centavos implícitos (ej: $1.250,50 → 125050).</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div>Verificar que ningún importe tenga coma, punto como separador de miles, signo negativo o notación "1E+5".</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>Si el problema viene de una exportación personalizada, revisar el <strong>formato de salida numérica</strong> en la configuración de exportación.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>En e-Sueldos estándar, usar siempre la exportación oficial LSD que formatea automáticamente los campos.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 10 -->
-            <div class="te-card advertencia">
-              <div class="te-card-head">
-                <span class="te-rank">10</span><span class="te-icono">SAC</span>
-                <div class="te-card-head-txt"><div class="te-titulo">SAC fuera de período</div><div class="te-desc">Conceptos SAC semestrales informados fuera de junio o diciembre.</div></div>
-                <span class="te-sev advertencia">REVISAR</span><span class="te-chev">▾</span>
-              </div>
-              <div class="te-card-body">
-                <div class="te-section"><div class="te-section-label">Qué revisar</div><div class="te-section-txt">Período REG01 y conceptos SAC en REG03. Usar conceptos proporcionales cuando corresponda.</div></div>
-                <div class="te-sol-box">Corregir el concepto o moverlo al período correcto.</div>
-                <div class="te-pasos-wrap">
-                  <div class="te-pasos-label">Cómo resolverlo</div>
-                  <div class="te-pasos">
-                    <div class="te-paso"><span class="te-paso-n">1</span><div>Si es SAC semestral real (junio/diciembre), verificar que el <strong>período de la liquidación</strong> sea 06 o 12. ARCA lo valida contra el REG01.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">2</span><div>Si es un SAC proporcional por egreso, usar el <strong>concepto de SAC proporcional</strong>, no el código de SAC semestral.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">3</span><div>Si el SAC fue liquidado fuera de período por error, anular esa liquidación y registrarla en el mes correcto.</div></div>
-                    <div class="te-paso"><span class="te-paso-n">4</span><div>Regenerar el TXT del período corregido y volver a validar.</div></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
           </div>
         </main>
       </div>
@@ -536,6 +335,7 @@
         btn.classList.add('activo'); btn.setAttribute('aria-selected','true');
         document.getElementById('tab-'+tab).classList.add('activo');
         if(tab==='historial') renderHistorial();
+        if(tab==='frecuentes') renderStatsHistorico();
       });
     });
 
@@ -1191,13 +991,230 @@
     // ═══════════════════════════════════════════════════════
     // HISTORIAL
     // ═══════════════════════════════════════════════════════
-    function guardarEnHistorial(nombre, data){
-      const hist=JSON.parse(localStorage.getItem(HIST_KEY)||'[]');
-      hist.unshift({nombre,fecha:new Date().toISOString(),veredicto:data.veredicto,estadisticas:data.estadisticas,problemas:(data.problemas||[]).map(p=>({id:p.id,titulo:p.titulo,severidad:p.severidad}))});
-      if(hist.length>30) hist.splice(30);
-      localStorage.setItem(HIST_KEY,JSON.stringify(hist));
+    function guardarEnHistorial(nombre, data) {
+      const fileKey = btoa(unescape(encodeURIComponent(nombre))).substring(0, 20);
+      const hist = JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
+      const existente = hist.findIndex(h => h.fileKey === fileKey);
+      const entrada = {
+        nombre,
+        fileKey,
+        fecha: new Date().toISOString(),
+        veredicto: data.veredicto,
+        estadisticas: data.estadisticas,
+        problemas: (data.problemas || []).map(p => ({
+          id: p.id,
+          titulo: p.titulo,
+          severidad: p.severidad,
+          descripcion: p.descripcion, // <-- NUEVOS CAMPOS GUARDADOS
+          causa: p.causa,
+          solucion: p.solucion,
+          tutorial_pasos: p.tutorial_pasos
+        }))
+      };
+      if (existente >= 0) {
+        hist[existente] = entrada; 
+      } else {
+        hist.unshift(entrada);     
+      }
+      if (hist.length > 30) hist.splice(30);
+      localStorage.setItem(HIST_KEY, JSON.stringify(hist));
       actualizarContadorHist(hist.length);
+      
+      if (document.getElementById('tab-frecuentes').classList.contains('activo')) {
+        renderStatsHistorico();
+      }
     }
+
+    // ═══════════════════════════════════════════════════════
+    // ESTADÍSTICAS HISTÓRICAS (Tab Frecuentes)
+    // ═══════════════════════════════════════════════════════
+    function calcularStatsHistorial() {
+      const hist = JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
+      if (!hist.length) return null;
+
+      const archivosUnicos = new Set(hist.map(h => h.fileKey || h.nombre)).size;
+      const frecMap = new Map();
+      
+      hist.forEach(h => {
+        (h.problemas || []).forEach(p => {
+          if (!frecMap.has(p.id)) {
+            // Ahora también recopilamos la data rica para los acordeones
+            frecMap.set(p.id, { 
+              id: p.id, 
+              titulo: p.titulo, 
+              severidad: p.severidad, 
+              descripcion: p.descripcion,
+              causa: p.causa,
+              solucion: p.solucion,
+              tutorial_pasos: p.tutorial_pasos,
+              count: 0 
+            });
+          }
+          frecMap.get(p.id).count++;
+        });
+      });
+      
+      // Ordenamos todos los errores por frecuencia
+      const frecuenciaErrores = Array.from(frecMap.values()).sort((a, b) => b.count - a.count);
+
+      const serieErrores = [...hist].reverse().map(h => {
+        const s = h.estadisticas || {};
+        return s.errores_criticos || s.tipos_error_critico || 0;
+      });
+
+      return {
+        totalAnalisis: hist.length,
+        archivosUnicos,
+        topError: frecuenciaErrores[0] || null,
+        ultimaFecha: hist[0] ? new Date(hist[0].fecha) : null,
+        frecuenciaErrores, // Acá va la lista completa
+        serieErrores,
+      };
+    }
+
+    function renderStatsHistorico() {
+      const stats = calcularStatsHistorial();
+      const vacio = document.getElementById('sh-vacio');
+      const kpis  = document.getElementById('sh-kpis');
+      const barras = document.getElementById('sh-barras');
+      const spark  = document.getElementById('sh-spark');
+      const listaErrores = document.getElementById('te-lista'); // Contenedor de la lista dinámica
+
+      if (!stats) {
+        vacio.style.display = 'block';
+        kpis.innerHTML = ''; barras.innerHTML = ''; spark.innerHTML = '';
+        listaErrores.innerHTML = '';
+        return;
+      }
+
+      vacio.style.display = 'none';
+
+      // ── KPIs ───────────────────────────────────────────────────
+      const fechaStr = stats.ultimaFecha 
+        ? stats.ultimaFecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+        : '—';
+
+      kpis.innerHTML = `
+        <div class="sh-kpi"><div class="sh-kpi-ico">📊</div><div class="sh-kpi-val">${stats.totalAnalisis}</div><div class="sh-kpi-label">Análisis realizados</div></div>
+        <div class="sh-kpi"><div class="sh-kpi-ico">📂</div><div class="sh-kpi-val">${stats.archivosUnicos}</div><div class="sh-kpi-label">Archivos distintos</div></div>
+        <div class="sh-kpi"><div class="sh-kpi-ico">🔴</div><div class="sh-kpi-val">${stats.topError ? esc(stats.topError.titulo.substring(0, 60) + (stats.topError.titulo.length > 60 ? '…' : '')) : '—'}</div><div class="sh-kpi-label">Error más frecuente</div></div>
+        <div class="sh-kpi"><div class="sh-kpi-ico">📅</div><div class="sh-kpi-val">${fechaStr}</div><div class="sh-kpi-label">Último análisis</div></div>
+      `;
+
+      // ── Barras horizontales (Gráfico) ──────────────────────────
+      const top6 = stats.frecuenciaErrores.slice(0, 6); // Para el gráfico solo queremos el top 6
+      const maxCount = top6[0]?.count || 1;
+      barras.innerHTML = top6.length === 0
+        ? '<p style="font-size:12px;color:var(--txt-xlo);text-align:center;padding:10px 0">Sin datos aún</p>'
+        : top6.map(e => {
+            const pct = Math.round((e.count / maxCount) * 100);
+            const cls = (e.severidad || '').toLowerCase() === 'critico' ? 'critico' : 'advertencia';
+            const titulo = esc(e.titulo || e.id || '');
+            return `
+              <div class="sh-barra-row">
+                <div class="sh-barra-label" title="${titulo}">${titulo}</div>
+                <div class="sh-barra-track"><div class="sh-barra-fill ${cls}" style="width:${pct}%"></div></div>
+                <div class="sh-barra-count">${e.count}</div>
+              </div>`;
+          }).join('');
+
+      // ── Sparkline SVG ──────────────────────────────────────────
+      const serie = stats.serieErrores;
+      spark.innerHTML = '';
+      if (serie.length >= 2) {
+        const W = 400, H = 90, PAD = 8;
+        const maxVal = Math.max(...serie, 1);
+        const minVal = Math.min(...serie);
+        const pts = serie.map((v, i) => [PAD + (i / (serie.length - 1)) * (W - PAD * 2), H - PAD - ((v - minVal) / (maxVal - minVal || 1)) * (H - PAD * 2)]);
+        const pathD = pts.map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`)).join(' ');
+        const areaD = pathD + ` L${pts[pts.length-1][0]},${H} L${pts[0][0]},${H} Z`;
+        const gradId = 'sh-grad-' + Math.random().toString(36).substring(2, 7);
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        defs.innerHTML = `<linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#DC2626" stop-opacity="0.25"/><stop offset="100%" stop-color="#DC2626" stop-opacity="0.02"/></linearGradient>`;
+        spark.appendChild(defs);
+        const area = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        area.setAttribute('d', areaD); area.setAttribute('fill', `url(#${gradId})`); spark.appendChild(area);
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        line.setAttribute('d', pathD); line.setAttribute('fill', 'none'); line.setAttribute('stroke', '#DC2626'); line.setAttribute('stroke-width', '2'); line.setAttribute('stroke-linejoin', 'round'); line.setAttribute('stroke-linecap', 'round');
+        spark.appendChild(line);
+        pts.forEach(([x, y], i) => {
+          const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', '4'); dot.setAttribute('fill', '#DC2626'); dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '2');
+          const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          label.setAttribute('x', x); label.setAttribute('y', y - 8); label.setAttribute('text-anchor', 'middle'); label.setAttribute('font-size', '10'); label.setAttribute('fill', '#7A8BB0'); label.setAttribute('font-family', 'Inter,sans-serif');
+          label.textContent = serie[i];
+          g.appendChild(dot); g.appendChild(label); spark.appendChild(g);
+        });
+      } else {
+        spark.innerHTML = `<text x="200" y="45" text-anchor="middle" fill="#B4BFDA" font-size="12" font-family="Inter,sans-serif">Necesitás al menos 2 análisis para ver la evolución</text>`;
+      }
+
+      // ── Tarjetas desplegables (Lista dinámica) ──────────────────
+      if (stats.frecuenciaErrores.length === 0) {
+        listaErrores.innerHTML = '<div style="text-align:center; padding: 40px; color: var(--txt-lo);">No hay errores registrados aún en el historial.</div>';
+      } else {
+        listaErrores.innerHTML = stats.frecuenciaErrores.map((p, i) => {
+          const rank = String(i + 1).padStart(2, '0');
+          const isCritico = (p.severidad || '').toLowerCase() === 'critico';
+          const cls = isCritico ? 'critico' : 'advertencia';
+          const sevStr = isCritico ? 'CRITICO' : 'REVISAR';
+          
+          let pasosHtml = '';
+          if (p.tutorial_pasos && p.tutorial_pasos.length) {
+            const items = p.tutorial_pasos.map(t => `
+              <div class="te-paso">
+                <span class="te-paso-n">${t.paso || '•'}</span>
+                <div class="te-paso-txt">
+                  <div class="te-paso-titulo">${esc(t.titulo || '')}</div>
+                  <div class="te-paso-detalle">${esc(t.instruccion || '')}</div>
+                </div>
+              </div>
+            `).join('');
+            
+            pasosHtml = `
+              <div class="te-pasos-wrap" style="margin-top:16px;">
+                <div class="te-section-label" style="margin-bottom:8px;">Cómo resolverlo</div>
+                <div class="te-pasos">${items}</div>
+              </div>`;
+          }
+
+          return `
+            <div class="te-card ${cls}">
+              <div class="te-card-head">
+                <span class="te-rank">${rank}</span>
+                <span class="te-icono">⚠️</span>
+                <div class="te-card-head-txt">
+                  <div class="te-titulo">${esc(p.titulo || 'Error detectado')}</div>
+                  <div class="te-desc">${esc(p.descripcion || '').substring(0, 90)}...</div>
+                </div>
+                <span class="te-sev ${cls}">${sevStr}</span>
+                <span class="te-chev">▾</span>
+              </div>
+              <div class="te-card-body">
+                <div class="te-section" style="margin-bottom:12px">
+                  <div class="te-section-label">Qué revisar</div>
+                  <div class="te-section-txt">${esc(p.descripcion || '—')}</div>
+                </div>
+                ${p.causa ? `
+                <div class="te-section" style="margin-bottom:12px">
+                  <div class="te-section-label">Posible causa</div>
+                  <div class="te-section-txt">${esc(p.causa)}</div>
+                </div>` : ''}
+                <div class="te-section-label" style="margin-bottom:6px">Resumen de solución</div>
+                <div class="te-sol-box">${esc(p.solucion || '—')}</div>
+                ${pasosHtml}
+              </div>
+            </div>`;
+        }).join('');
+
+        // Enganchar el evento de "click" para que se desplieguen
+        listaErrores.querySelectorAll('.te-card-head').forEach(head => {
+          head.addEventListener('click', () => head.closest('.te-card').classList.toggle('open'));
+        });
+      }
+    }
+
     function actualizarContadorHist(n){
       const el=document.getElementById('hist-count');
       if(n>0){el.textContent=n;el.style.display='inline';}else{el.style.display='none';}
@@ -1256,6 +1273,7 @@
     // Inicializar historial
     const _hist=JSON.parse(localStorage.getItem(HIST_KEY)||'[]');
     actualizarContadorHist(_hist.length);
+    renderStatsHistorico();
   </script>
 </body>
 </html>
