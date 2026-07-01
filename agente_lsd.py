@@ -874,33 +874,51 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
         conceptos_incremento_no_rem = _sumar_conceptos(conceptos, {"0525", "0535", "0536", "0537", "0538", "0539"})
 
 
-        # 1. Validar Tope Máximo de Detracción (Cazador de centavos)
-        # ARCA tiene un tope estricto de 7038.70 para ciertos casos. 
-        # Si se pasa por 1 centavo (ej: 7038.71), ARCA lo fulmina.
-        if importe_detraer is not None and Decimal("7038.70") < importe_detraer < Decimal("7040.00"):
+        # 1. Validar Tope Máximo de Detracción (Por mes)
+        mes_liq = "01"
+        if reg01s and len(reg01s) > 0:
+            per_str = reg01s[0].get("periodo", "")
+            if len(per_str) == 6:
+                mes_liq = per_str[4:6]
+        
+        tope_detraccion = Decimal("10558.05") if mes_liq in ("06", "12") else Decimal("7038.70")
+        
+        if importe_detraer is not None and importe_detraer > tope_detraccion:
             _add_issue(
                 issues,
                 "LSD-REG04-DETRACCION-MAX",
                 linea=reg["linea"],
                 cuil=reg["cuil"],
+                detalle={"importe_detraer": str(importe_detraer), "tope_maximo": str(tope_detraccion)}
+            )
+
+        # 2. Validar Base 9 Inflada por Indemnizaciones (El error de los 1.6 millones)
+        conceptos_infladores = {"0525", "0536", "0537", "0538", "0577", "0599"}
+        suma_erronea = _sumar_conceptos(conceptos, conceptos_infladores)
+        
+        if base9 is not None and suma_erronea > Decimal("0") and base9 > (rem or Decimal("0")):
+            _add_issue(
+                issues,
+                "LSD-REG04-BASE9-INDEM",
+                linea=reg["linea"],
+                cuil=reg["cuil"],
                 detalle={
-                    "importe_detraer": str(importe_detraer),
-                    "tope_maximo": "7038.70"
+                    "base9_informada": str(base9),
+                    "suma_erronea_detectada": str(suma_erronea),
+                    "conceptos_culpables": list(conceptos_infladores)
                 }
             )
 
-        # 2. Validar Tope Proporcional de SAC
-        # EL TXT NO GUARDA EL CÓDIGO ARCA, SOLO EL CÓDIGO INTERNO (ej: 0027).
-        # Por lo tanto, detectamos el SAC por comportamiento: 
-        # Mucha plata (> 1 millón) + Base 1 topada (> 3 millones) + Pocos días (<= 20)
-        if base1 is not None and base1 > Decimal("3000000.00"):
+        # 3. Validar Tope Proporcional de SAC Guillotinado (Ajustado para detectar 1 solo día)
+        if base1 is not None and base1 > Decimal("1000000.00"):
             for concepto in conceptos:
                 imp_con = concepto.get("importe", Decimal("0"))
                 cant_raw = concepto.get("cantidad", "0")
                 
-                if imp_con > Decimal("1000000.00") and cant_raw.isdigit():
+                # Si el concepto paga más de 100k pero le informaron 15 días o menos
+                if imp_con > Decimal("100000.00") and cant_raw.isdigit():
                     dias = Decimal(cant_raw) / Decimal("100")
-                    if Decimal("0") < dias <= Decimal("20"):
+                    if Decimal("0") < dias <= Decimal("15"):
                         _add_issue(
                             issues,
                             "LSD-REG04-TOPE-MOPRE-SAC",
@@ -908,7 +926,7 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
                             cuil=reg["cuil"],
                             detalle={
                                 "base1_informada": str(base1),
-                                "importe_pagado": str(imp_con),
+                                "importe_sac": str(imp_con),
                                 "dias_informados": str(dias)
                             }
                         )
