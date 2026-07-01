@@ -203,72 +203,6 @@ def _eliminar_sesion(session_id: str) -> None:
                 pass
 
 
-INFORME_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "resumen": {"type": "string"},
-        "veredicto": {"type": "string", "enum": ["PRESENTABLE", "SERÁ RECHAZADO", "REVISAR"]},
-        "veredicto_razon": {"type": "string"},
-        "estadisticas": {
-            "type": "object",
-            "properties": {
-                "total_empleados": {"type": "integer"},
-                "total_conceptos": {"type": "integer"},
-                "errores_criticos": {"type": "integer"},
-                "advertencias": {"type": "integer"},
-            },
-            "required": ["total_empleados", "total_conceptos", "errores_criticos", "advertencias"],
-        },
-        "errores_arca": {
-            "type": "object",
-            "properties": {
-                "presente": {"type": "boolean"},
-                "total": {"type": "integer"},
-                "resumen": {"type": "string"},
-            },
-            "required": ["presente", "total", "resumen"],
-        },
-        "problemas": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "string"},
-                    "severidad": {"type": "string", "enum": ["CRITICO", "ADVERTENCIA", "INFO"]},
-                    "titulo": {"type": "string"},
-                    "descripcion": {"type": "string"},
-                    "cuils_afectados": {"type": "integer"},
-                    "todos_los_cuils_afectados": {"type": "array", "items": {"type": "string"}},
-                    "ejemplos_cuil": {"type": "array", "items": {"type": "string"}},
-                    "causa": {"type": "string"},
-                    "solucion": {"type": "string"},
-                    "tutorial_pasos": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "paso": {"type": "integer"},
-                                "titulo": {"type": "string"},
-                                "instruccion": {"type": "string"},
-                                "referencia": {"type": "string"},
-                            },
-                            "required": ["paso", "titulo", "instruccion", "referencia"],
-                        },
-                    },
-                    "diagnostico_cruce": {"type": "string"},
-                    "diferencias_por_cuil": {"type": "array", "items": {"type": "object"}},
-                },
-                "required": [
-                    "id", "severidad", "titulo", "descripcion", "cuils_afectados",
-                    "todos_los_cuils_afectados", "causa", "solucion", "tutorial_pasos",
-                ],
-            },
-        },
-    },
-    "required": ["resumen", "veredicto", "veredicto_razon", "estadisticas", "errores_arca", "problemas"],
-}
-
-
 # ── Cliente Gemini ─────────────────────────────────────────────────────────────
 
 def _get_client() -> genai.Client | None:
@@ -599,9 +533,8 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
 
     config = gtypes.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT_ANALISIS,
-        temperature=0.1,
+        temperature=0.2,
         response_mime_type="application/json",
-        response_schema=INFORME_RESPONSE_SCHEMA,
     )
 
     # Historial: texto + PDFs opcionales en el primer mensaje
@@ -646,7 +579,8 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
             sesion['historial_analisis'] = historial
             q.put({"tipo": "informe", "data": informe})
         except json.JSONDecodeError:
-            q.put({"tipo": "texto_libre", "data": texto})
+            # En vez de mandar el texto crudo, disparamos un error limpio
+            q.put({"tipo": "error", "mensaje": "La IA devolvió un formato inválido o se agotó el tiempo de procesamiento. Por favor, intentá de nuevo."})
     else:
         q.put({"tipo": "error", "mensaje": "El modelo no devolvió respuesta. Intentá de nuevo."})
 
@@ -693,14 +627,37 @@ def analizar():
         t = threading.Thread(target=ejecutar_analisis, args=(session_id, q), daemon=True)
         t.start()
         yield f"data: {json.dumps({'tipo': 'session', 'session_id': session_id})}\n\n"
+        
+        tiempo_esperado = 0
+        MAX_TIMEOUT = 300  # 5 minutos de tiempo máximo absoluto
+        
         while True:
             try:
-                ev = q.get(timeout=120)
+                # Esperar mensajes de la IA en tramos cortos de 5 segundos
+                ev = q.get(timeout=5)
+                
+                # Si recibimos el evento de fin (None), cerramos el stream
+                if ev is None:
+                    yield f"data: {json.dumps({'tipo': 'fin'})}\n\n"
+                    break
+                    
+                # Si recibimos un evento real (progreso, informe, error), lo mandamos
+                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                tiempo_esperado = 0  # Reiniciamos el reloj si hay actividad real
+                
             except queue.Empty:
-                yield f"data: {json.dumps({'tipo': 'error', 'mensaje': 'Tiempo agotado'})}\n\n"; break
-            if ev is None:
-                yield f"data: {json.dumps({'tipo': 'fin'})}\n\n"; break
-            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+                # Se agotaron los 5 segundos sin que la IA mande nada.
+                tiempo_esperado += 5
+                
+                # Si ya pasaron 5 minutos reales, cortamos por lo sano.
+                if tiempo_esperado >= MAX_TIMEOUT:
+                    yield f"data: {json.dumps({'tipo': 'error', 'mensaje': 'Tiempo de espera de la IA excedido (5 min).'})}\n\n"
+                    break
+                
+                # ¡EL TRUCO DE MAGIA! Mandamos un "latido" vacío.
+                # En SSE, un mensaje que empieza con ':' es un comentario.
+                # El servidor web ve tráfico y NO corta la conexión, el navegador lo ignora.
+                yield ": ping-keep-alive\n\n"
 
     return Response(generar(), mimetype='text/event-stream',
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})

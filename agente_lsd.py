@@ -40,7 +40,7 @@ except ImportError:
 # CONFIGURACIÓN
 # ---------------------------------------------------------------------------
 
-MODELO = "gemini-3.5-flash"
+MODELO = "gemini-2.5-flash"
 
 # ---------------------------------------------------------------------------
 # Constantes de formato LSD (0-indexed, spec AFIP LSD v2.x)
@@ -384,6 +384,20 @@ RULE_CATALOG = {
         "mensaje": "Sin importe de detracción, Rem10 (Base imponible 10) debe ser cero.",
         "fix_hint": "Recalcular detracción Ley 27.430 en e-Sueldos y regenerar el LSD.",
     },
+    "LSD-REG04-DETRACCION-MAX": {
+        "severidad": "CRITICO",
+        "campo": "REG04 importe a detraer",
+        "fuente_pdf": "validaciones.pdf",
+        "mensaje": "El importe a detraer supera el tope legal máximo establecido (7038,70).",
+        "fix_hint": "Ajustar el importe de la detracción para que no supere el tope de la Ley 27.430.",
+    },
+    "LSD-REG04-TOPE-MOPRE-SAC": {
+        "severidad": "CRITICO",
+        "campo": "REG04 Bases Imponibles",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "La Base 1 es rechazada por ARCA porque el concepto SAC tiene muy pocos días informados (tope proporcional estricto).",
+        "fix_hint": "Cambiar el concepto a SAC semestral o informar los días reales del semestre en las unidades.",
+    },
 }
 
 def _slice(linea: str, start: int, end: int) -> str:
@@ -425,6 +439,8 @@ def _periodo_yyyymm_valido(valor: str, permitir_blanco: bool = False, permitir_c
 def _fecha_yyyymmdd_valida(valor: str, permitir_blanco: bool = False) -> bool:
     valor = valor or ''
     if permitir_blanco and not valor.strip():
+        return True
+    if valor == "00000000":
         return True
     if not re.fullmatch(r'\d{8}', valor):
         return False
@@ -856,6 +872,49 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
         concepto_0577 = _sumar_conceptos(conceptos, {"0577"})
         concepto_0448 = _sumar_conceptos(conceptos, {"0448"})
         conceptos_incremento_no_rem = _sumar_conceptos(conceptos, {"0525", "0535", "0536", "0537", "0538", "0539"})
+
+
+        # 1. Validar Tope Máximo de Detracción (Cazador de centavos)
+        # ARCA tiene un tope estricto de 7038.70 para ciertos casos. 
+        # Si se pasa por 1 centavo (ej: 7038.71), ARCA lo fulmina.
+        if importe_detraer is not None and Decimal("7038.70") < importe_detraer < Decimal("7040.00"):
+            _add_issue(
+                issues,
+                "LSD-REG04-DETRACCION-MAX",
+                linea=reg["linea"],
+                cuil=reg["cuil"],
+                detalle={
+                    "importe_detraer": str(importe_detraer),
+                    "tope_maximo": "7038.70"
+                }
+            )
+
+        # 2. Validar Tope Proporcional de SAC
+        # EL TXT NO GUARDA EL CÓDIGO ARCA, SOLO EL CÓDIGO INTERNO (ej: 0027).
+        # Por lo tanto, detectamos el SAC por comportamiento: 
+        # Mucha plata (> 1 millón) + Base 1 topada (> 3 millones) + Pocos días (<= 20)
+        if base1 is not None and base1 > Decimal("3000000.00"):
+            for concepto in conceptos:
+                imp_con = concepto.get("importe", Decimal("0"))
+                cant_raw = concepto.get("cantidad", "0")
+                
+                if imp_con > Decimal("1000000.00") and cant_raw.isdigit():
+                    dias = Decimal(cant_raw) / Decimal("100")
+                    if Decimal("0") < dias <= Decimal("20"):
+                        _add_issue(
+                            issues,
+                            "LSD-REG04-TOPE-MOPRE-SAC",
+                            linea=reg["linea"],
+                            cuil=reg["cuil"],
+                            detalle={
+                                "base1_informada": str(base1),
+                                "importe_pagado": str(imp_con),
+                                "dias_informados": str(dias)
+                            }
+                        )
+                        break
+
+
         for campo in ("base1", "base2", "base3", "base4", "base5", "base6", "base7", "base8", "base9", "dif_aporte_ss", "dif_contr_ss", "base10", "importe_detraer"):
             valor = reg.get(campo)
             if valor is not None and valor < Decimal("0"):
@@ -868,19 +927,24 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
             _add_issue(issues, "LSD-REG04-REM-001", linea=reg["linea"], cuil=reg["cuil"], detalle={"rem_bruta": reg["rem_bruta_raw"], "base1": reg["base1_raw"], "problema": "base1_supera_rem_bruta"})
         if base2 is not None and base10 is not None and importe_detraer is not None and importe_detraer > Decimal("0"):
             base10_esperada = max(base2 - importe_detraer, Decimal("0"))
-            if base10 != base10_esperada:
+            if abs(base10 - base10_esperada) > Decimal("0.05"):
                 _add_issue(
                     issues,
                     "LSD-REG04-DETRACCION-001",
                     linea=reg["linea"],
                     cuil=reg["cuil"],
                     detalle={
+                        "base": "10", 
+                        "informado": str(base10),              
+                        "determinado": str(base10_esperada),   
+                        "diferencia": str(base10 - base10_esperada),
                         "base2": reg["base2_raw"],
                         "importe_detraer": reg["importe_detraer_raw"],
                         "base10": reg["base10_raw"],
                         "base10_esperada": str(base10_esperada),
                     },
                 )
+
         if base1 is not None and reg.get("base9") is not None and concepto_0577 > Decimal("0") and reg["base9"] > base1:
             codigos_relacionados = {"0577"}
             _add_issue(
@@ -977,35 +1041,6 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
         base9 = reg.get("base9")
         tolerancia = Decimal("0.01")
 
-        if base4 is not None and base5 is not None and base4 > 0 and base5 > 0:
-            if abs(base4 - base5) > tolerancia:
-                _add_issue(
-                    issues,
-                    "LSD-REG04-BASE4-BASE5-001",
-                    linea=reg["linea"],
-                    cuil=reg["cuil"],
-                    detalle={
-                        "base4": reg["base4_raw"],
-                        "base5": reg["base5_raw"],
-                        "diferencia": str(abs(base4 - base5)),
-                    },
-                )
-
-        if base9 is not None and base2 is not None and base2 > Decimal("0") and base9 > base2 + tolerancia:
-            _add_issue(
-                issues,
-                "LSD-REG04-BASE9-002",
-                linea=reg["linea"],
-                cuil=reg["cuil"],
-                detalle={
-                    "base": 9,
-                    "informado": str(base9),
-                    "determinado": str(base2),
-                    "diferencia": str(base9 - base2),
-                    "base2": reg["base2_raw"],
-                    "base9": reg["base9_raw"],
-                },
-            )
 
         if (
             base9 is not None and base2 is not None and base1 is not None
@@ -1038,28 +1073,6 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
                 detalle={
                     "base2": reg["base2_raw"],
                     "base4": reg["base4_raw"],
-                },
-            )
-
-        if (
-            base1 is not None and base9 is not None
-            and base9 > base1 + tolerancia
-            and concepto_0577 <= Decimal("0")
-            and not (concepto_0448 > Decimal("0") and rem is not None and base9 > rem)
-            and not (conceptos_incremento_no_rem > Decimal("0") and base9 > base1 * Decimal("2"))
-        ):
-            _add_issue(
-                issues,
-                "LSD-REG04-BASE9-001",
-                linea=reg["linea"],
-                cuil=reg["cuil"],
-                detalle={
-                    "base": 9,
-                    "informado": str(base9),
-                    "determinado": str(base1),
-                    "diferencia": str(base9 - base1),
-                    "base1": reg["base1_raw"],
-                    "base9": reg["base9_raw"],
                 },
             )
 

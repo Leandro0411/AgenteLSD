@@ -992,7 +992,7 @@
     // HISTORIAL
     // ═══════════════════════════════════════════════════════
     function guardarEnHistorial(nombre, data) {
-      const fileKey = btoa(unescape(encodeURIComponent(nombre))).substring(0, 20);
+      const fileKey = btoa(unescape(encodeURIComponent(nombre)));
       const hist = JSON.parse(localStorage.getItem(HIST_KEY) || '[]');
       const existente = hist.findIndex(h => h.fileKey === fileKey);
       const entrada = {
@@ -1038,15 +1038,9 @@
       hist.forEach(h => {
         (h.problemas || []).forEach(p => {
           if (!frecMap.has(p.id)) {
-            // Ahora también recopilamos la data rica para los acordeones
             frecMap.set(p.id, { 
-              id: p.id, 
-              titulo: p.titulo, 
-              severidad: p.severidad, 
-              descripcion: p.descripcion,
-              causa: p.causa,
-              solucion: p.solucion,
-              tutorial_pasos: p.tutorial_pasos,
+              id: p.id, titulo: p.titulo, severidad: p.severidad, 
+              descripcion: p.descripcion, causa: p.causa, solucion: p.solucion, tutorial_pasos: p.tutorial_pasos,
               count: 0 
             });
           }
@@ -1054,12 +1048,16 @@
         });
       });
       
-      // Ordenamos todos los errores por frecuencia
       const frecuenciaErrores = Array.from(frecMap.values()).sort((a, b) => b.count - a.count);
 
+      // AHORA GUARDAMOS EL OBJETO COMPLETO PARA EL GRÁFICO (Valor, Fecha, Nombre)
       const serieErrores = [...hist].reverse().map(h => {
         const s = h.estadisticas || {};
-        return s.errores_criticos || s.tipos_error_critico || 0;
+        return {
+          valor: s.errores_criticos || s.tipos_error_critico || 0,
+          fecha: new Date(h.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }),
+          nombre: h.nombre
+        };
       });
 
       return {
@@ -1067,7 +1065,7 @@
         archivosUnicos,
         topError: frecuenciaErrores[0] || null,
         ultimaFecha: hist[0] ? new Date(hist[0].fecha) : null,
-        frecuenciaErrores, // Acá va la lista completa
+        frecuenciaErrores,
         serieErrores,
       };
     }
@@ -1078,7 +1076,7 @@
       const kpis  = document.getElementById('sh-kpis');
       const barras = document.getElementById('sh-barras');
       const spark  = document.getElementById('sh-spark');
-      const listaErrores = document.getElementById('te-lista'); // Contenedor de la lista dinámica
+      const listaErrores = document.getElementById('te-lista');
 
       if (!stats) {
         vacio.style.display = 'block';
@@ -1090,10 +1088,7 @@
       vacio.style.display = 'none';
 
       // ── KPIs ───────────────────────────────────────────────────
-      const fechaStr = stats.ultimaFecha 
-        ? stats.ultimaFecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
-        : '—';
-
+      const fechaStr = stats.ultimaFecha ? stats.ultimaFecha.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
       kpis.innerHTML = `
         <div class="sh-kpi"><div class="sh-kpi-ico">📊</div><div class="sh-kpi-val">${stats.totalAnalisis}</div><div class="sh-kpi-label">Análisis realizados</div></div>
         <div class="sh-kpi"><div class="sh-kpi-ico">📂</div><div class="sh-kpi-val">${stats.archivosUnicos}</div><div class="sh-kpi-label">Archivos distintos</div></div>
@@ -1101,8 +1096,8 @@
         <div class="sh-kpi"><div class="sh-kpi-ico">📅</div><div class="sh-kpi-val">${fechaStr}</div><div class="sh-kpi-label">Último análisis</div></div>
       `;
 
-      // ── Barras horizontales (Gráfico) ──────────────────────────
-      const top6 = stats.frecuenciaErrores.slice(0, 6); // Para el gráfico solo queremos el top 6
+      // ── Barras horizontales ─────────────────────────────────────────
+      const top6 = stats.frecuenciaErrores.slice(0, 6);
       const maxCount = top6[0]?.count || 1;
       barras.innerHTML = top6.length === 0
         ? '<p style="font-size:12px;color:var(--txt-xlo);text-align:center;padding:10px 0">Sin datos aún</p>'
@@ -1118,39 +1113,119 @@
               </div>`;
           }).join('');
 
-      // ── Sparkline SVG ──────────────────────────────────────────
+      // ── GRÁFICO DE ÁREA ENRIQUECIDO (SVG) ──────────────────────────
       const serie = stats.serieErrores;
       spark.innerHTML = '';
+      
       if (serie.length >= 2) {
-        const W = 400, H = 90, PAD = 8;
-        const maxVal = Math.max(...serie, 1);
-        const minVal = Math.min(...serie);
-        const pts = serie.map((v, i) => [PAD + (i / (serie.length - 1)) * (W - PAD * 2), H - PAD - ((v - minVal) / (maxVal - minVal || 1)) * (H - PAD * 2)]);
-        const pathD = pts.map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`)).join(' ');
-        const areaD = pathD + ` L${pts[pts.length-1][0]},${H} L${pts[0][0]},${H} Z`;
-        const gradId = 'sh-grad-' + Math.random().toString(36).substring(2, 7);
+        // Dimensiones maestras
+        const W = 800, H = 240, PAD_X = 30, PAD_Y_TOP = 20, PAD_Y_BOT = 30;
+        const innerW = W - (PAD_X * 2);
+        const innerH = H - PAD_Y_TOP - PAD_Y_BOT;
+        
+        // Configurar viewBox dinámico
+        spark.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+        const maxVal = Math.max(...serie.map(s => s.valor), 5); // Base mínima de 5
+        const minVal = 0; // Forzamos 0 abajo para que tenga sentido de volumen
+
+        // 1. Dibujar Grilla (Líneas de fondo)
         const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-        defs.innerHTML = `<linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#DC2626" stop-opacity="0.25"/><stop offset="100%" stop-color="#DC2626" stop-opacity="0.02"/></linearGradient>`;
+        const lineasY = [0, 0.5, 1]; // Top, Medio, Base
+        lineasY.forEach(pct => {
+          const y = PAD_Y_TOP + (innerH * pct);
+          const val = Math.round(maxVal - (maxVal * pct));
+          
+          // Línea punteada
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', PAD_X); line.setAttribute('y1', y);
+          line.setAttribute('x2', W - PAD_X); line.setAttribute('y2', y);
+          line.setAttribute('stroke', '#E2E8F4'); line.setAttribute('stroke-dasharray', '4 4');
+          spark.appendChild(line);
+
+          // Etiqueta del eje Y
+          const textY = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          textY.setAttribute('x', PAD_X - 8); textY.setAttribute('y', y + 4);
+          textY.setAttribute('text-anchor', 'end'); textY.setAttribute('font-size', '10');
+          textY.setAttribute('fill', '#B4BFDA'); textY.setAttribute('font-family', 'Inter, sans-serif');
+          textY.textContent = val;
+          spark.appendChild(textY);
+        });
+
+        // 2. Calcular Puntos
+        const pts = serie.map((item, i) => {
+          const x = PAD_X + (i / (serie.length - 1)) * innerW;
+          const y = PAD_Y_TOP + innerH - ((item.valor - minVal) / (maxVal - minVal)) * innerH;
+          return { x, y, ...item };
+        });
+
+        const pathD = pts.map((p, i) => (i === 0 ? `M${p.x},${p.y}` : `L${p.x},${p.y}`)).join(' ');
+        const areaD = pathD + ` L${pts[pts.length-1].x},${PAD_Y_TOP + innerH} L${pts[0].x},${PAD_Y_TOP + innerH} Z`;
+
+        // Gradiente
+        const gradId = 'sh-grad-' + Math.random().toString(36).substring(2, 7);
+        defs.innerHTML += `<linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#DC2626" stop-opacity="0.3"/><stop offset="100%" stop-color="#DC2626" stop-opacity="0.01"/></linearGradient>`;
         spark.appendChild(defs);
+
+        // Área
         const area = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         area.setAttribute('d', areaD); area.setAttribute('fill', `url(#${gradId})`); spark.appendChild(area);
+
+        // Línea roja
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        line.setAttribute('d', pathD); line.setAttribute('fill', 'none'); line.setAttribute('stroke', '#DC2626'); line.setAttribute('stroke-width', '2'); line.setAttribute('stroke-linejoin', 'round'); line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('d', pathD); line.setAttribute('fill', 'none'); 
+        line.setAttribute('stroke', '#DC2626'); line.setAttribute('stroke-width', '2.5'); 
+        line.setAttribute('stroke-linejoin', 'round'); line.setAttribute('stroke-linecap', 'round');
         spark.appendChild(line);
-        pts.forEach(([x, y], i) => {
+
+        // 3. Dibujar Puntos y Etiquetas (Fechas)
+        pts.forEach((p, i) => {
           const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          
+          // Punto interactivo
           const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-          dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.setAttribute('r', '4'); dot.setAttribute('fill', '#DC2626'); dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '2');
-          const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-          label.setAttribute('x', x); label.setAttribute('y', y - 8); label.setAttribute('text-anchor', 'middle'); label.setAttribute('font-size', '10'); label.setAttribute('fill', '#7A8BB0'); label.setAttribute('font-family', 'Inter,sans-serif');
-          label.textContent = serie[i];
-          g.appendChild(dot); g.appendChild(label); spark.appendChild(g);
+          dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y); 
+          dot.setAttribute('r', '4'); dot.setAttribute('fill', '#DC2626'); 
+          dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '2');
+          dot.setAttribute('class', 'spark-pt'); // Para el hover de CSS
+          
+          // Tooltip nativo
+          const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+          title.textContent = `Archivo: ${p.nombre}\nFecha: ${p.fecha}\nErrores Críticos: ${p.valor}`;
+          dot.appendChild(title);
+
+          // Etiqueta del eje X (mostramos 1 de cada N si hay muchos para no pisarlos)
+          const mostrarEtiqueta = serie.length < 15 || i % Math.ceil(serie.length / 10) === 0 || i === serie.length - 1;
+          if (mostrarEtiqueta) {
+            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            label.setAttribute('x', p.x); label.setAttribute('y', H - 5); 
+            label.setAttribute('text-anchor', 'middle'); label.setAttribute('font-size', '10'); 
+            label.setAttribute('fill', '#7A8BB0'); label.setAttribute('font-family', 'Inter, sans-serif');
+            label.textContent = p.fecha;
+            g.appendChild(label);
+          }
+
+          // Número arriba del punto (siempre visible para contexto rápido)
+          const num = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          num.setAttribute('x', p.x); num.setAttribute('y', p.y - 10); 
+          num.setAttribute('text-anchor', 'middle'); num.setAttribute('font-size', '11'); 
+          num.setAttribute('font-weight', '700'); num.setAttribute('fill', '#3A4A6B'); 
+          num.setAttribute('font-family', 'Inter, sans-serif');
+          num.textContent = p.valor;
+          
+          g.appendChild(num);
+          g.appendChild(dot);
+          spark.appendChild(g);
         });
+
       } else {
-        spark.innerHTML = `<text x="200" y="45" text-anchor="middle" fill="#B4BFDA" font-size="12" font-family="Inter,sans-serif">Necesitás al menos 2 análisis para ver la evolución</text>`;
+        spark.innerHTML = `<text x="400" y="120" text-anchor="middle" fill="#B4BFDA" font-size="13" font-family="Inter,sans-serif">Necesitás al menos 2 análisis para ver la evolución y el grid</text>`;
       }
 
       // ── Tarjetas desplegables (Lista dinámica) ──────────────────
+      // ... (Dejá acá el resto de tu código igual que como lo tenías: if (stats.frecuenciaErrores.length === 0) { ... })
+      
+      // Acá pegá la lógica de listaErrores.innerHTML que ya tenías funcionando perfecto.
       if (stats.frecuenciaErrores.length === 0) {
         listaErrores.innerHTML = '<div style="text-align:center; padding: 40px; color: var(--txt-lo);">No hay errores registrados aún en el historial.</div>';
       } else {
@@ -1208,7 +1283,6 @@
             </div>`;
         }).join('');
 
-        // Enganchar el evento de "click" para que se desplieguen
         listaErrores.querySelectorAll('.te-card-head').forEach(head => {
           head.addEventListener('click', () => head.closest('.te-card').classList.toggle('open'));
         });
