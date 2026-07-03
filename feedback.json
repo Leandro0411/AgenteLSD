@@ -1,0 +1,22 @@
+[
+    {
+        "id": "f65fbbb1",
+        "fecha": "2026-07-03 11:33:29",
+        "username": "consultor1",
+        "archivo": "LibroDigital - 2026-06-24T135733.597---.txt",
+        "tipo": "ticket",
+        "estrellas": 0,
+        "mensaje": "No entiendo por qué me rebota la base 9 si estaba mal, y ya la corregí pero sigue pasando como archivo inválido",
+        "estado": "cerrado"
+    },
+    {
+        "id": "2c15c89f",
+        "fecha": "2026-07-03 11:26:40",
+        "username": "consultor1",
+        "archivo": "librodigital_xthche.txt",
+        "tipo": "rating",
+        "estrellas": "4",
+        "mensaje": "Bueno pero podria mejorar",
+        "estado": "ok"
+    }
+]

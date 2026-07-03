@@ -26,10 +26,12 @@
     <div class="hdr-sep"></div>
     <span class="hdr-tool">Agente Libro Sueldo Digital · Validador</span>
     <div class="hdr-right">
-      <span class="hdr-status">
+      <span class="hdr-status" style="margin-right: 12px;">
         <span class="hdr-status-dot"></span>
         <span id="modelo-badge">cargando...</span>
       </span>
+      <span style="color: #fff; font-size: 13px; font-weight: 600; margin-right: 16px;">👤 {{ username }}</span>
+      <a href="{{ url_for('logout') }}" style="color: rgba(255,255,255,0.8); text-decoration: none; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,0.2); padding: 6px 12px; border-radius: var(--r); background: rgba(255,255,255,0.05); transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">Cerrar Sesión</a>
     </div>
   </header>
 
@@ -40,15 +42,26 @@
           <span class="tab-ico" aria-hidden="true">TXT</span>
           <span>Validar archivo</span>
         </button>
-        <button class="tab-btn" data-tab="frecuentes" role="tab" aria-selected="false">
-          <span class="tab-ico top-ico" aria-hidden="true">10</span>
-          <span>Errores frecuentes</span>
-        </button>
         <button class="tab-btn" data-tab="historial" role="tab" aria-selected="false">
           <span class="tab-ico" aria-hidden="true">H</span>
           <span>Historial</span>
           <span id="hist-count"></span>
         </button>
+        
+        {% if rol == 'admin' %}
+        <button class="tab-btn" data-tab="frecuentes" role="tab" aria-selected="false">
+          <span class="tab-ico top-ico" aria-hidden="true">10</span>
+          <span>Errores frecuentes</span>
+        </button>
+        <button class="tab-btn" data-tab="conocimiento" role="tab" aria-selected="false">
+          <span class="tab-ico" aria-hidden="true">📚</span>
+          <span>Conocimiento</span>
+        </button>
+        <button class="tab-btn" data-tab="soporte" role="tab" aria-selected="false">
+          <span class="tab-ico" aria-hidden="true">💬</span>
+          <span>Soporte</span>
+        </button>
+        {% endif %}
       </nav>
     </aside>
 
@@ -184,11 +197,51 @@
           <div class="sec-t" id="probs-titulo"></div>
           <div id="probs-lista"></div>
         </div>
+        <div id="btn-pdf-wrap" style="display: none; text-align: right; margin-top: 32px; margin-bottom: 24px;">
+          <button id="btn-descargar-pdf" onclick="exportarAPDF()" style="background: var(--surface); border: 1px solid var(--border); color: var(--txt-hi); padding: 8px 16px; border-radius: var(--r); font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; box-shadow: var(--shadow-s); transition: all 0.2s;">
+            📄 Descargar Informe PDF
+          </button>
+        </div>
+        <div id="panel-feedback-usuario" style="display: none; margin-top: 32px; margin-bottom: 24px; padding: 24px; background: #F8FAFC; border: 1px solid var(--border); border-radius: 12px;">
+          <div style="display: flex; gap: 24px; flex-wrap: wrap;">
+            
+            <div style="flex: 1; min-width: 250px;">
+              <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 800; color: var(--txt-hi);">¿Qué te pareció este análisis?</h4>
+              <div id="star-rating" style="font-size: 28px; color: #CBD5E1; cursor: pointer; margin-bottom: 12px; user-select: none;">
+                <span data-val="1">★</span><span data-val="2">★</span><span data-val="3">★</span><span data-val="4">★</span><span data-val="5">★</span>
+              </div>
+              <textarea id="feedback-msg" class="form-input" rows="2" placeholder="Dejá un comentario breve (opcional)..." style="width: 100%; box-sizing: border-box; margin-bottom: 12px; background: #fff;"></textarea>
+              <button id="btn-enviar-fb" onclick="enviarFeedback('rating')" class="btn-primary" style="padding: 10px 16px; font-size: 13px; width: 100%;">Enviar calificación</button>
+            </div>
+            
+            <div style="flex: 1; min-width: 250px; border-left: 1px solid var(--border); padding-left: 24px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 800; color: var(--err);">¿No podés resolver un error?</h4>
+              <p style="font-size: 13px; color: var(--txt-mid); margin: 0 0 16px 0; line-height: 1.5;">Abrí un ticket de soporte. Un administrador revisará tu caso y te contactará.</p>
+              <button onclick="document.getElementById('modal-ticket').classList.add('open')" style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; padding: 12px 24px; border-radius: var(--r); font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.2s; width: 100%; box-shadow: 0 2px 4px rgba(220,38,38,0.1);">🆘 Solicitar Ayuda (Abrir Ticket)</button>
+            </div>
+
+          </div>
+        </div>
         <button id="btn-nueva">← Analizar otro archivo</button>
       </section>
         </main>
       </div>
 
+      <!-- ══ TAB: HISTORIAL ══ -->
+      <div class="tab-panel" id="tab-historial">
+        <main>
+          <div class="hist-header">
+            <div>
+              <h2>Historial de análisis</h2>
+              <p>Revisá los últimos archivos evaluados en este navegador.</p>
+            </div>
+            <button id="btn-hist-limpiar" onclick="limpiarHistorial()">Borrar todo</button>
+          </div>
+          <div id="hist-contenido"></div>
+        </main>
+      </div>
+
+      {% if rol == 'admin' %}
       <!-- ══ TAB: ERRORES FRECUENTES ══ -->
       <div class="tab-panel" id="tab-frecuentes">
         <main>
@@ -225,19 +278,52 @@
         </main>
       </div>
 
-      <!-- ══ TAB: HISTORIAL ══ -->
-      <div class="tab-panel" id="tab-historial">
+      <!-- ══ TAB: BASE DE CONOCIMIENTO ══ -->
+      <div class="tab-panel" id="tab-conocimiento">
         <main>
-          <div class="hist-header">
+          <div class="te-header">
             <div>
-              <h2>Historial de análisis</h2>
-              <p>Revisá los últimos archivos evaluados en este navegador.</p>
+              <h2>Base de Conocimiento</h2>
+              <p>Gestioná los documentos oficiales (PDFs) que la IA lee para diagnosticar errores.</p>
             </div>
-            <button id="btn-hist-limpiar" onclick="limpiarHistorial()">Borrar todo</button>
           </div>
-          <div id="hist-contenido"></div>
+
+          <div class="sh-panel" style="margin-bottom: 32px; padding: 24px; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-s);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <div>
+                <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: var(--txt-hi);">Subir nueva normativa</h3>
+                <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--txt-mid);">La IA procesará el PDF automáticamente para los próximos análisis.</p>
+              </div>
+              <div>
+                <input type="file" id="input-pdf-admin" accept=".pdf" style="display: none;" onchange="subirPdfAdmin(this.files[0])">
+                <button onclick="document.getElementById('input-pdf-admin').click()" style="background: var(--es-blue); color: #fff; border: none; padding: 10px 20px; border-radius: var(--r); font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(27,86,232,0.2); transition: transform 0.1s;">+ Subir Normativa</button>
+              </div>
+            </div>
+            <div id="pdf-upload-status" style="display: none; padding: 12px; background: #F8FAFC; border: 1px dashed var(--es-blue); border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--es-blue); text-align: center;"></div>
+          </div>
+
+          <div class="sh-panel" style="padding: 24px; background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-s);">
+            <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 800; color: var(--txt-hi);">Documentos activos en la IA</h3>
+            <div id="lista-pdfs-admin" style="display: flex; flex-direction: column; gap: 12px;">
+              </div>
+          </div>
         </main>
       </div>
+
+      <!-- ══ TAB: SOPORTE ══ -->
+      <div class="tab-panel" id="tab-soporte">
+        <main>
+          <div class="te-header">
+            <div>
+              <h2>Tickets de Ayuda y Feedback</h2>
+              <p>Revisá las dudas de tus consultores y el feedback general de la herramienta.</p>
+            </div>
+          </div>
+          <div id="soporte-lista" style="display: flex; flex-direction: column; gap: 16px;">
+            </div>
+        </main>
+      </div>
+      {% endif %}
     </div>
   </div>
 
@@ -285,16 +371,89 @@
     </div>
   </div>
 
+  <!-- Modal Editar Regla -->
+  <div class="modal-overlay" id="modal-edit-regla" onclick="if(event.target===this) this.classList.remove('open')">
+    <div class="modal" role="dialog" aria-modal="true" style="width: 90%; max-width: 800px; max-height: 90vh; display: flex; flex-direction: column; background: #fff; border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+      
+      <div class="modal-head" style="padding: 24px 32px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #F8FAFC; border-radius: 16px 16px 0 0;">
+        <h3 id="edit-modal-titulo" style="margin: 0; font-size: 18px; font-weight: 800; color: var(--txt-hi); display: flex; align-items: center; gap: 8px;">
+          <span>✏️</span> Editor de Base de Conocimiento
+        </h3>
+        <button class="modal-close" onclick="document.getElementById('modal-edit-regla').classList.remove('open')" style="background: none; border: none; font-size: 20px; cursor: pointer; color: var(--txt-mid); transition: color 0.2s;">✕</button>
+      </div>
+
+      <div class="modal-body" style="overflow-y: auto; padding: 32px; text-align: left;">
+        <input type="hidden" id="edit-rule-id">
+        
+        <div style="display: grid; gap: 24px;">
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label" style="display: block; margin-bottom: 8px; font-size: 12px; font-weight: 700; color: var(--txt-mid); text-transform: uppercase; letter-spacing: 0.05em;">Título del Error</label>
+            <input type="text" id="edit-titulo" class="form-input" style="width: 100%; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r); font-family: inherit; font-size: 15px; font-weight: 600; color: var(--es-blue); background: var(--surface-2); transition: border-color 0.2s;">
+          </div>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="display: block; margin-bottom: 8px; font-size: 12px; font-weight: 700; color: var(--txt-mid); text-transform: uppercase; letter-spacing: 0.05em;">¿Qué está pasando?</label>
+              <textarea id="edit-desc" class="form-input" rows="3" style="width: 100%; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r); font-family: inherit; font-size: 14px; line-height: 1.5; color: var(--txt-hi); background: var(--surface-2); resize: vertical;"></textarea>
+            </div>
+
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="display: block; margin-bottom: 8px; font-size: 12px; font-weight: 700; color: var(--txt-mid); text-transform: uppercase; letter-spacing: 0.05em;">¿Por qué ocurre?</label>
+              <textarea id="edit-causa" class="form-input" rows="3" style="width: 100%; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r); font-family: inherit; font-size: 14px; line-height: 1.5; color: var(--txt-hi); background: var(--surface-2); resize: vertical;"></textarea>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin: 0;">
+            <label class="form-label" style="display: block; margin-bottom: 8px; font-size: 12px; font-weight: 700; color: var(--txt-mid); text-transform: uppercase; letter-spacing: 0.05em;">Resumen de solución general</label>
+            <textarea id="edit-solucion" class="form-input" rows="2" style="width: 100%; box-sizing: border-box; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r); font-family: inherit; font-size: 14px; line-height: 1.5; color: var(--txt-hi); background: var(--surface-2); resize: vertical;"></textarea>
+          </div>
+        </div>
+
+        <div style="margin-top: 32px; padding-top: 32px; border-top: 2px dashed var(--border);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h4 style="margin: 0; font-size: 16px; font-weight: 800; color: var(--txt-hi);">Tutorial Paso a Paso</h4>
+            <button type="button" onclick="agregarPasoEdit()" style="background: rgba(27,86,232,0.1); color: var(--es-blue); border: none; padding: 8px 16px; border-radius: var(--r); font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.2s;">+ Añadir Paso</button>
+          </div>
+          
+          <div id="edit-pasos-container" style="display: flex; flex-direction: column; gap: 16px;">
+            </div>
+        </div>
+
+        <div style="margin-top: 40px; display: flex; justify-content: flex-end; gap: 12px;">
+          <button type="button" onclick="document.getElementById('modal-edit-regla').classList.remove('open')" style="padding: 12px 24px; border: 1px solid var(--border); background: transparent; color: var(--txt-mid); border-radius: var(--r); font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;">Cancelar</button>
+          <button type="button" id="btn-guardar-regla" onclick="guardarEdicionRegla()" style="padding: 12px 32px; background: var(--es-blue); color: #fff; border: none; border-radius: var(--r); font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(27,86,232,0.25); transition: transform 0.1s;">Guardar para todos</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Abrir Ticket -->
+  <div class="modal-overlay" id="modal-ticket" onclick="if(event.target===this) this.classList.remove('open')">
+    <div class="modal" role="dialog" aria-modal="true" style="width: 90%; max-width: 500px; background: #fff; border-radius: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.2);">
+      <div class="modal-head" style="padding: 24px; border-bottom: 1px solid var(--border); background: #FEF2F2; border-radius: 16px 16px 0 0; display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: var(--err);">🆘 Abrir Ticket de Soporte</h3>
+        <button class="modal-close" onclick="document.getElementById('modal-ticket').classList.remove('open')" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 24px;">
+        <p style="margin: 0 0 16px 0; font-size: 13px; color: var(--txt-mid);">Describí el problema. Se adjuntará automáticamente el nombre de tu archivo y tu usuario para que el consultor pueda ayudarte.</p>
+        <textarea id="ticket-msg" class="form-input" rows="5" placeholder="Ej: No entiendo por qué me rebota la Base 9 del legajo 104, ya revisé los conceptos y..." style="width: 100%; box-sizing: border-box; resize: vertical; margin-bottom: 24px; padding: 12px; font-family: inherit; font-size: 14px; background: var(--surface-2);"></textarea>
+        <button id="btn-enviar-ticket" onclick="enviarFeedback('ticket')" class="btn-primary" style="width: 100%; padding: 14px; font-size: 14px;">Enviar Ticket</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ═══════════════════════════════════════════════════════
     // ESTADO GLOBAL
     // ═══════════════════════════════════════════════════════
+    const USER_ROLE = '{{ rol }}';
+    const USER_NAME = '{{ username }}';
     let archivo        = null;
     let sessionId      = null;
     let chatHistorial  = [];
     let chatEnProgreso = false;
     let ultimoInforme  = null;
-    const HIST_KEY = 'agente_lsd_historial';
+    const HIST_KEY = 'agente_lsd_historial_' + USER_NAME;
 
     // ═══════════════════════════════════════════════════════
     // DOM
@@ -336,6 +495,8 @@
         document.getElementById('tab-'+tab).classList.add('activo');
         if(tab==='historial') renderHistorial();
         if(tab==='frecuentes') renderStatsHistorico();
+        if(tab==='conocimiento') cargarListaPdfs();
+        if(tab==='soporte') cargarListaSoporte();
       });
     });
 
@@ -689,6 +850,8 @@
       document.getElementById('s-crit').textContent = afectados;
       document.getElementById('s-adv').textContent  = tiposCrit;
       document.getElementById('resumen').textContent = data.resumen||'';
+      document.getElementById('btn-pdf-wrap').style.display = 'block';
+      document.getElementById('panel-feedback-usuario').style.display = 'block';
       renderEstadoChart(s);
 
       const lista=document.getElementById('probs-lista');
@@ -805,49 +968,17 @@
             </div>`; 
           }
 
-          // ── Detalle técnico para soporte/debug ──────────────────────
-          let techH = '';
-          const tech = p.detalle_tecnico;
-          if(tech && (tech.evidencias||[]).length){
-            const evidenciasH = (tech.evidencias||[]).slice(0,30).map((ev,idx)=>{
-              const posiciones = ev.posiciones_usadas || ev.detalle?.posiciones_usadas || {};
-              const posH = Object.entries(posiciones).map(([k,v])=>`<span class="tech-chip">${esc(k)}: ${esc(String(v))}</span>`).join('');
-              const regs03 = ev.raw_reg03_relacionados || ev.detalle?.raw_reg03_relacionados || [];
-              const regs03H = regs03.length ? regs03.map(r=>`
-                <div class="raw-line">
-                  <div class="raw-meta">REG03 · línea ${esc(String(r.linea??'—'))} · concepto ${esc(r.codigo||'—')} · importe ${esc(r.importe||'—')} · ${esc(r.debito_credito||'—')}</div>
-                  <code>${esc(r.raw||'')}</code>
-                </div>`).join('') : '';
-              const rawReg04 = ev.raw_reg04 || ev.detalle?.raw_reg04 || '';
-              return `
-                <details class="tech-evidence" ${idx===0?'open':''}>
-                  <summary>CUIL ${esc(ev.cuil||'—')} · línea ${esc(String(ev.linea??'—'))}</summary>
-                  ${posH?`<div class="tech-chips">${posH}</div>`:''}
-                  ${rawReg04?`<div class="raw-line"><div class="raw-meta">REG04 crudo</div><code>${esc(rawReg04)}</code></div>`:''}
-                  ${regs03H?`<div class="raw-group">${regs03H}</div>`:''}
-                  <pre class="tech-json">${esc(JSON.stringify(ev.detalle||{}, null, 2))}</pre>
-                </details>`;
-            }).join('');
-            techH = `
-              <div class="dl">
-                <details class="tech-box">
-                  <summary>Detalle técnico</summary>
-                  <div class="tech-rule">
-                    <span>Regla: <strong>${esc(tech.regla_id||p.id||'')}</strong></span>
-                    ${tech.campo?`<span>Campo: <strong>${esc(tech.campo)}</strong></span>`:''}
-                    ${tech.fuente_pdf?`<span>Fuente: <strong>${esc(tech.fuente_pdf)}</strong></span>`:''}
-                    <span>Evidencias: <strong>${tech.total_evidencias??(tech.evidencias||[]).length}</strong></span>
-                  </div>
-                  ${evidenciasH}
-                </details>
-              </div>`;
-          }
+          const userRol = '{{ rol }}';
+          const btnEditH = (userRol === 'admin') 
+            ? `<button class="btn-edit-rule" onclick="abrirModalEdit('${p.id}'); event.stopPropagation();" title="Modificar explicación para todos los consultores" style="margin-left:auto; margin-right:12px; background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer; transition:background 0.2s;">✏️ Editar Manual</button>` 
+            : '';
 
           div.innerHTML=`
             <div class="pc-head">
               <span class="sev">${p.severidad||'INFO'}</span>
               <span class="pc-titulo">${esc(p.titulo||'')}</span>
               ${p.cuils_afectados?`<span class="pc-meta">${p.cuils_afectados} empleado${p.cuils_afectados!==1?'s':''}</span>`:''}
+              ${btnEditH}
               <span class="chev">▾</span>
             </div>
             <div class="pc-body">
@@ -856,7 +987,6 @@
               ${cuilsH}
               ${tutH}
               <div class="dl"><div class="dl-l">Resumen de solución</div><div class="sol-box">${esc(p.solucion||'')}</div></div>
-              ${techH}
             </div>`;
           div.querySelector('.pc-head').addEventListener('click',()=>div.classList.toggle('open'));
           lista.appendChild(div);
@@ -1222,10 +1352,6 @@
         spark.innerHTML = `<text x="400" y="120" text-anchor="middle" fill="#B4BFDA" font-size="13" font-family="Inter,sans-serif">Necesitás al menos 2 análisis para ver la evolución y el grid</text>`;
       }
 
-      // ── Tarjetas desplegables (Lista dinámica) ──────────────────
-      // ... (Dejá acá el resto de tu código igual que como lo tenías: if (stats.frecuenciaErrores.length === 0) { ... })
-      
-      // Acá pegá la lógica de listaErrores.innerHTML que ya tenías funcionando perfecto.
       if (stats.frecuenciaErrores.length === 0) {
         listaErrores.innerHTML = '<div style="text-align:center; padding: 40px; color: var(--txt-lo);">No hay errores registrados aún en el historial.</div>';
       } else {
@@ -1344,10 +1470,352 @@
     function ocultarErr(){ errBox.style.display='none'; }
     function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-    // Inicializar historial
+    function exportarAPDF() {
+      // 1. Ocultar cosas que no queremos en el PDF 
+      document.getElementById('btn-pdf-wrap').style.display = 'none';
+      
+      // 2. Seleccionar la sección de RESULTADO
+      const elemento = document.getElementById('resultado'); 
+
+      // 3. Configurar la exportación
+      const opciones = {
+        margin:       [10, 10, 10, 10], 
+        filename:     'Informe_Errores_LSD_ARCA.pdf',
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true }, 
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      // 4. Cambiar temporalmente el fondo
+      const colorOriginal = elemento.style.background;
+      elemento.style.background = '#ffffff';
+
+      // 5. Generar y descargar
+      html2pdf().set(opciones).from(elemento).save().then(() => {
+        document.getElementById('btn-pdf-wrap').style.display = 'block';
+        elemento.style.background = colorOriginal;
+      });
+    }
+
+    // Inicializar historial del usuario activo
     const _hist=JSON.parse(localStorage.getItem(HIST_KEY)||'[]');
     actualizarContadorHist(_hist.length);
-    renderStatsHistorico();
+    
+    // Solo ejecuta las estadísticas si el usuario es administrador
+    if (USER_ROLE === 'admin') {
+      renderStatsHistorico();
+    }
+
+
+    // 2. Lógica visual de las Estrellas
+    let currentRating = 0;
+    document.querySelectorAll('#star-rating span').forEach(s => {
+      s.addEventListener('mouseover', function() {
+         let val = this.dataset.val;
+         document.querySelectorAll('#star-rating span').forEach(st => {
+            st.style.color = st.dataset.val <= val ? '#F59E0B' : '#CBD5E1'; // Amarillo o gris
+         });
+      });
+      s.addEventListener('mouseout', function() {
+         document.querySelectorAll('#star-rating span').forEach(st => {
+            st.style.color = st.dataset.val <= currentRating ? '#F59E0B' : '#CBD5E1';
+         });
+      });
+      s.addEventListener('click', function() {
+         currentRating = this.dataset.val;
+      });
+    });
+
+    // 3. Enviar Feedback o Ticket
+    function enviarFeedback(tipo) {
+      let payload = {
+        tipo: tipo,
+        archivo: _archivoNombreActual || (archivo ? archivo.name : 'Desconocido')
+      };
+
+      if (tipo === 'rating') {
+        if (currentRating === 0) { alert('Por favor, seleccioná una cantidad de estrellas.'); return; }
+        payload.estrellas = currentRating;
+        payload.mensaje = document.getElementById('feedback-msg').value.trim();
+        document.getElementById('btn-enviar-fb').textContent = "Enviando...";
+      } else {
+        const msg = document.getElementById('ticket-msg').value.trim();
+        if (!msg) { alert('Por favor, describí el problema.'); return; }
+        payload.mensaje = msg;
+        document.getElementById('btn-enviar-ticket').textContent = "Enviando...";
+      }
+
+      fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(r=>r.json()).then(d => {
+        if (tipo === 'rating') {
+          document.getElementById('panel-feedback-usuario').innerHTML = '<div style="color:var(--ok); font-weight:700; text-align:center;">¡Gracias por tu feedback! ⭐</div>';
+        } else {
+          document.getElementById('modal-ticket').classList.remove('open');
+          alert('Tu ticket fue enviado al administrador. Pronto se pondrán en contacto.');
+          document.getElementById('ticket-msg').value = '';
+          document.getElementById('btn-enviar-ticket').textContent = "Enviar Ticket al Admin";
+        }
+      });
+    }
+
+    // 4. Cargar lista de Soporte para el Admin
+    function cargarListaSoporte() {
+      const lista = document.getElementById('soporte-lista');
+      lista.innerHTML = '<div style="color: var(--txt-mid); font-size: 13px;">Buscando tickets... ⏳</div>';
+      
+      fetch('/api/feedback').then(r=>r.json()).then(d => {
+        if(!d.ok) { lista.innerHTML = `Error: ${d.error}`; return; }
+        if(d.data.length === 0) { lista.innerHTML = '<div style="padding: 24px; text-align: center; color: var(--txt-mid); background: #F8FAFC; border-radius: 12px; border: 1px dashed var(--border);">No hay tickets ni feedback recientes.</div>'; return; }
+        
+        lista.innerHTML = d.data.map(f => {
+          if (f.tipo === 'ticket') {
+            const isCerrado = f.estado === 'cerrado';
+            return `
+              <div style="padding: 20px; background: #fff; border: 1px solid ${isCerrado ? 'var(--border)' : '#FECACA'}; border-left: 4px solid ${isCerrado ? 'var(--txt-lo)' : '#DC2626'}; border-radius: 8px; box-shadow: var(--shadow-s); opacity: ${isCerrado ? '0.7' : '1'};">
+                <div style="display:flex; justify-content:space-between; margin-bottom: 12px;">
+                  <div><strong style="color: var(--err);">🆘 Ticket de Ayuda</strong> <span style="color: var(--txt-mid); font-size: 12px;">· ${f.fecha}</span></div>
+                  ${!isCerrado ? `<button onclick="cerrarTicket('${f.id}')" style="background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:12px; cursor:pointer;">Marcar Resuelto</button>` : '<span style="font-size:12px; font-weight:700; color:var(--txt-mid);">Resuelto ✓</span>'}
+                </div>
+                <div style="font-size: 13px; color: var(--txt-mid); margin-bottom: 8px;"><strong>Usuario:</strong> ${esc(f.username)} | <strong>Archivo:</strong> <code>${esc(f.archivo)}</code></div>
+                <div style="padding: 12px; background: var(--surface-2); border-radius: 6px; font-size: 14px; color: var(--txt-hi);">${esc(f.mensaje)}</div>
+              </div>`;
+          } else {
+            return `
+              <div style="padding: 20px; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-s);">
+                <div style="margin-bottom: 12px;">
+                  <strong style="color: var(--txt-hi);">⭐ Calificación: ${f.estrellas}/5</strong> 
+                  <span style="color: var(--txt-mid); font-size: 12px;">· ${f.fecha} · Usuario: ${esc(f.username)}</span>
+                </div>
+                ${f.mensaje ? `<div style="font-size: 14px; color: var(--txt-mid); font-style: italic;">"${esc(f.mensaje)}"</div>` : ''}
+              </div>`;
+          }
+        }).join('');
+      });
+    }
+
+    function cerrarTicket(id) {
+      fetch(`/api/feedback/${id}/cerrar`, {method: 'POST'})
+      .then(r=>r.json()).then(() => cargarListaSoporte());
+    }
+
+
+    // ═══════════════════════════════════════════════════════
+    // WIKI COLABORATIVA — EDICIÓN DE REGLAS
+    // ═══════════════════════════════════════════════════════
+
+    function abrirModalEdit(ruleId) {
+      if (!ultimoInforme || !ultimoInforme.problemas) return;
+      const problema = ultimoInforme.problemas.find(p => p.id === ruleId);
+      if (!problema) return;
+
+      // Cargar datos estáticos
+      document.getElementById('edit-rule-id').value = ruleId;
+      document.getElementById('edit-titulo').value = problema.titulo || '';
+      document.getElementById('edit-desc').value = problema.descripcion || '';
+      document.getElementById('edit-causa').value = problema.causa || '';
+      document.getElementById('edit-solucion').value = problema.solucion || '';
+
+      // Limpiar y cargar pasos dinámicos
+      const container = document.getElementById('edit-pasos-container');
+      container.innerHTML = '';
+      const pasos = problema.tutorial_pasos || [];
+      if (pasos.length === 0) {
+        agregarPasoEdit(); // Al menos un paso vacío si no hay nada
+      } else {
+        pasos.forEach(paso => agregarPasoEdit(paso));
+      }
+
+      document.getElementById('modal-edit-regla').classList.add('open');
+    }
+
+    function agregarPasoEdit(dato = {}) {
+      const container = document.getElementById('edit-pasos-container');
+      const div = document.createElement('div');
+      div.className = 'edit-paso-item';
+      // Diseño tipo "tarjeta" para cada paso
+      div.style = "background: #F8FAFC; padding: 20px; border-radius: 12px; border: 1px solid #E2E8F0; position: relative; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);";
+      
+      div.innerHTML = `
+        <button type="button" onclick="this.parentElement.remove(); actualizarNumerosPasos();" style="position: absolute; top: 16px; right: 16px; background: #FEE2E2; color: #DC2626; border: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: background 0.2s;" title="Borrar paso">🗑️</button>
+        
+        <div style="font-weight: 800; font-size: 13px; color: var(--es-blue); text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 8px;">
+          <span style="background: var(--es-blue); color: #fff; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px;" class="paso-num"></span> 
+          Instrucción
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div>
+            <label style="display: block; font-size: 11px; font-weight: 700; color: var(--txt-mid); margin-bottom: 6px; text-transform: uppercase;">Título de la acción</label>
+            <input type="text" class="form-input paso-tit" placeholder="Ej: Recalcular Liquidación..." value="${esc(dato.titulo||'')}" style="width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r); font-family: inherit; font-size: 14px; font-weight: 600; background: #fff; color: var(--txt-hi);">
+          </div>
+          <div>
+            <label style="display: block; font-size: 11px; font-weight: 700; color: var(--txt-mid); margin-bottom: 6px; text-transform: uppercase;">Normativa de Referencia (Opcional)</label>
+            <input type="text" class="form-input paso-ref" placeholder="Ej: Guía AFIP N°45" value="${esc(dato.referencia||'')}" style="width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r); font-family: inherit; font-size: 14px; background: #fff; color: var(--txt-mid);">
+          </div>
+        </div>
+
+        <div>
+          <label style="display: block; font-size: 11px; font-weight: 700; color: var(--txt-mid); margin-bottom: 6px; text-transform: uppercase;">Explicación detallada</label>
+          <textarea class="form-input paso-inst" rows="2" placeholder="Explicá dónde hacer clic y qué completar en el sistema..." style="width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r); font-family: inherit; font-size: 14px; line-height: 1.5; background: #fff; color: var(--txt-hi); resize: vertical;">${esc(dato.instruccion||'')}</textarea>
+        </div>
+      `;
+      container.appendChild(div);
+      actualizarNumerosPasos();
+    }
+
+    function actualizarNumerosPasos() {
+      const container = document.getElementById('edit-pasos-container');
+      Array.from(container.children).forEach((el, idx) => {
+        el.querySelector('.paso-num').textContent = idx + 1;
+      });
+    }
+
+    function guardarEdicionRegla() {
+      const btn = document.getElementById('btn-guardar-regla');
+      const ruleId = document.getElementById('edit-rule-id').value;
+      
+      // Recolectar datos principales
+      const payload = {
+        mensaje: document.getElementById('edit-titulo').value.trim(),
+        descripcion: document.getElementById('edit-desc').value.trim(),
+        causa: document.getElementById('edit-causa').value.trim(),
+        solucion: document.getElementById('edit-solucion').value.trim(),
+        tutorial_pasos: []
+      };
+      
+      // Recolectar pasos (ignorando los que quedaron vacíos)
+      document.querySelectorAll('.edit-paso-item').forEach((el, index) => {
+        const tit = el.querySelector('.paso-tit').value.trim();
+        const inst = el.querySelector('.paso-inst').value.trim();
+        if (tit || inst) {
+          payload.tutorial_pasos.push({
+            paso: payload.tutorial_pasos.length + 1,
+            titulo: tit,
+            instruccion: inst,
+            referencia: el.querySelector('.paso-ref').value.trim()
+          });
+        }
+      });
+
+      btn.disabled = true;
+      btn.textContent = "Guardando...";
+
+      fetch('/api/reglas/' + ruleId, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          document.getElementById('modal-edit-regla').classList.remove('open');
+          
+          // Actualizar la interfaz actual en tiempo real sin recargar la página
+          const p = ultimoInforme.problemas.find(x => x.id === ruleId);
+          if (p) {
+            p.titulo = payload.mensaje;
+            p.descripcion = payload.descripcion;
+            p.causa = payload.causa;
+            p.solucion = payload.solucion;
+            p.tutorial_pasos = payload.tutorial_pasos;
+            mostrarInforme(ultimoInforme); // Re-dibuja las tarjetas
+          }
+        } else {
+          alert('Error al guardar: ' + d.error);
+        }
+      })
+      .catch(e => alert('Error de red: ' + e))
+      .finally(() => {
+        btn.disabled = false;
+        btn.textContent = "Guardar en la Base de Conocimiento";
+      });
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // SUBIDA DE NORMATIVAS PDF (ADMIN)
+    // ═══════════════════════════════════════════════════════
+    function subirPdfAdmin(file) {
+      if (!file) return;
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        alert("Por favor, seleccioná un archivo PDF.");
+        return;
+      }
+
+      const statusDiv = document.getElementById('pdf-upload-status');
+      statusDiv.style.display = 'block';
+      statusDiv.textContent = `Enseñándole a la IA el archivo "${file.name}"... ⏳`;
+
+      const fd = new FormData();
+      fd.append('pdf', file);
+
+      fetch('/api/subir-normativa', {
+        method: 'POST',
+        body: fd
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          statusDiv.style.background = '#F0FDF4';
+          statusDiv.style.borderColor = '#22C55E';
+          statusDiv.style.color = '#16A34A';
+          statusDiv.textContent = `✅ ¡Listo! ${d.mensaje}`;
+          cargarListaPdfs();
+          setTimeout(() => { statusDiv.style.display = 'none'; }, 5000);
+        } else {
+          statusDiv.style.background = '#FEF2F2';
+          statusDiv.style.borderColor = '#EF4444';
+          statusDiv.style.color = '#DC2626';
+          statusDiv.textContent = `❌ Error: ${d.error}`;
+        }
+      })
+      .catch(e => {
+        statusDiv.style.background = '#FEF2F2';
+        statusDiv.style.borderColor = '#EF4444';
+        statusDiv.style.color = '#DC2626';
+        statusDiv.textContent = `❌ Error de conexión: ${e.message}`;
+      })
+      .finally(() => {
+        // Limpiamos el input para que permita subir el mismo archivo si hubo error
+        document.getElementById('input-pdf-admin').value = '';
+      });
+    }
+
+    function cargarListaPdfs() {
+      const lista = document.getElementById('lista-pdfs-admin');
+      if (!lista) return;
+      lista.innerHTML = '<div style="color: var(--txt-mid); font-size: 13px;">Buscando documentos en el cerebro de la IA... ⏳</div>';
+      
+      fetch('/api/normativas')
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          if (!d.pdfs || d.pdfs.length === 0) {
+            lista.innerHTML = '<div style="padding: 24px; background: #F8FAFC; border: 1px dashed var(--border); border-radius: 8px; text-align: center; color: var(--txt-mid); font-size: 14px;">No hay ningún documento cargado aún.</div>';
+            return;
+          }
+          lista.innerHTML = d.pdfs.map(pdf => `
+            <div style="display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r); transition: border-color 0.2s;">
+              <div style="font-size: 24px; background: #fff; padding: 8px; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02);">📄</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 700; font-size: 14px; color: var(--txt-hi); margin-bottom: 4px;">${esc(pdf.display_name)}</div>
+                <div style="font-size: 11px; color: var(--txt-mid); font-family: monospace; background: #fff; padding: 4px 8px; border-radius: 4px; display: inline-block; border: 1px solid var(--border);">URI: ${esc(pdf.uri)}</div>
+              </div>
+            </div>
+          `).join('');
+        } else {
+          lista.innerHTML = `<div style="color: var(--err); font-size: 13px;">❌ Error: ${esc(d.error)}</div>`;
+        }
+      })
+      .catch(e => {
+        lista.innerHTML = `<div style="color: var(--err); font-size: 13px;">❌ Error de conexión al buscar los PDFs.</div>`;
+      });
+    }
   </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
 </body>
 </html>

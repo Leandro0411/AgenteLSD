@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iniciar Sesión — Agente LSD</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23F7FAFF'/%3E%3Cpath d='M22.7 43.5h23.1c6.1 0 11.1-4.8 11.1-10.8 0-5.6-4.3-10.2-9.8-10.7C44.8 14.6 38.1 9.4 30.3 9.4c-8.4 0-15.4 6-16.9 13.9C8.1 24.6 4.1 29.3 4.1 34.9c0 6.8 5.5 8.6 18.6 8.6z' fill='%231B56E8'/%3E%3Cpath d='M24.4 36.5h20.9c3.8 0 6.8-2.8 6.8-6.3 0-3.3-2.6-6-6-6.3C44.5 18.8 39.8 15 34.1 15c-6.1 0-11.1 4.4-12.2 10.1-3.9.9-6.8 4.1-6.8 7.9 0 3.9 3.3 3.5 9.3 3.5z' fill='%233B82F6' opacity='.45'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <style>
+    /* Estilos específicos para centrar el login usando tus variables existentes */
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .login-wrapper {
+      width: 100%;
+      max-width: 400px;
+    }
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--rl);
+      padding: 40px 32px;
+      box-shadow: var(--shadow-l);
+      text-align: center;
+    }
+    .login-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 56px;
+      height: 56px;
+      background: #F7FAFF;
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgba(11,31,69,.08);
+      margin-bottom: 24px;
+    }
+    .login-logo svg { width: 42px; height: 42px; }
+    .login-logo path:first-child { fill: var(--es-blue); }
+    .login-logo path:last-child { fill: #5BA1FF; opacity: .52; }
+    
+    .login-title {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--txt-hi);
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .login-subtitle {
+      font-size: 14px;
+      color: var(--txt-lo);
+      margin-bottom: 32px;
+    }
+    .form-group {
+      text-align: left;
+      margin-bottom: 20px;
+    }
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--txt-mid);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .form-input {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 14px 16px;
+      font-size: 14px;
+      color: var(--txt-hi);
+      transition: all 0.2s ease;
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: var(--es-blue);
+      background: var(--surface);
+      box-shadow: 0 0 0 4px var(--es-blue-l);
+    }
+    .btn-login {
+      width: 100%;
+      margin-top: 12px;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--es-blue), var(--es-blue-d));
+      color: #fff;
+      border: none;
+      border-radius: var(--r);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 8px 20px rgba(27,86,232,.2);
+    }
+    .btn-login:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px rgba(27,86,232,.28);
+    }
+    .login-error {
+      background: var(--err-bg);
+      border: 1px solid var(--err-border);
+      color: var(--err);
+      padding: 12px;
+      border-radius: var(--r);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      animation: fadeUp 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-wrapper">
+    <div class="login-card">
+      <div class="login-logo">
+        <svg viewBox="0 0 64 64" focusable="false">
+          <path d="M22.7 43.5h23.1c6.1 0 11.1-4.8 11.1-10.8 0-5.6-4.3-10.2-9.8-10.7C44.8 14.6 38.1 9.4 30.3 9.4c-8.4 0-15.4 6-16.9 13.9C8.1 24.6 4.1 29.3 4.1 34.9c0 6.8 5.5 8.6 18.6 8.6z"/>
+          <path d="M24.4 36.5h20.9c3.8 0 6.8-2.8 6.8-6.3 0-3.3-2.6-6-6-6.3C44.5 18.8 39.8 15 34.1 15c-6.1 0-11.1 4.4-12.2 10.1-3.9.9-6.8 4.1-6.8 7.9 0 3.9 3.3 3.5 9.3 3.5z"/>
+        </svg>
+      </div>
+      
+      <h1 class="login-title">Agente LSD</h1>
+      <p class="login-subtitle">Ingresá tus credenciales para continuar</p>
+
+      {% if error %}
+      <div class="login-error">
+        ⚠️ {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="POST" action="{{ url_for('login') }}">
+        <div class="form-group">
+          <label class="form-label" for="username">Usuario</label>
+          <input class="form-input" type="text" id="username" name="username" required autofocus placeholder="Ej: consultor1">
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label" for="password">Contraseña</label>
+          <input class="form-input" type="password" id="password" name="password" required placeholder="••••••••">
+        </div>
+        
+        <button type="submit" class="btn-login">Iniciar Sesión</button>
+      </form>
+    </div>
+  </div>
+
+</body>
+</html>

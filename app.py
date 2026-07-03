@@ -13,14 +13,17 @@ load_dotenv()
 
 import os, sys, json, tempfile, threading, queue, uuid, time
 from collections import defaultdict
-from flask import Flask, render_template, request, Response, jsonify, session
+from functools import wraps
+from datetime import timedelta
+from flask import Flask, render_template, request, Response, jsonify, session, redirect, url_for, abort
 
 sys.path.insert(0, os.path.dirname(__file__))
 from agente_lsd import (
     SYSTEM_PROMPT, MODELO, RULE_CATALOG,
     ejecutar_validaciones_deterministicas,
 )
-# correcciones.py desactivado — la corrección la realiza el agente general externo
+from auth import verificar_usuario, inicializar_base_datos
+inicializar_base_datos()
 try:
     from knowledge_loader import cargar_refs
 except ImportError:
@@ -32,6 +35,7 @@ from google.genai import types as gtypes
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)
 
 SESION_TTL_SEG = int(os.environ.get('SESION_TTL_SEG', '3600'))
 
@@ -296,6 +300,8 @@ def _construir_problemas_desde_validacion(
         cuils = sorted({i.get("cuil") for i in items if i.get("cuil")})
         mensaje = regla.get("mensaje") or first.get("mensaje", "")
         fix_hint = regla.get("fix_hint") or first.get("fix_hint", "")
+        causa_texto = regla.get("causa") or "El sistema detectó una inconsistencia matemática o de configuración según los parámetros de AFIP."
+        
         tutorial = tutoriales_por_id.get(rule_id) or _tutorial_basico(mensaje, fix_hint, regla.get("fuente_pdf", ""))
         problemas.append({
             "id": rule_id,
@@ -305,7 +311,7 @@ def _construir_problemas_desde_validacion(
             "cuils_afectados": len(cuils),
             "todos_los_cuils_afectados": cuils,
             "ejemplos_cuil": cuils[:5],
-            "causa": mensaje,
+            "causa": causa_texto, # <--- ACÁ CAMBIAMOS PARA QUE USE EL TEXTO NUEVO
             "solucion": fix_hint,
             "tutorial_pasos": tutorial,
             "diagnostico_cruce": "",
@@ -586,18 +592,57 @@ def ejecutar_analisis(session_id: str, q: queue.Queue):
 
     q.put(None)
 
+# ── CANDADOS DE SEGURIDAD ───────────────────────────────────────────────────
 
-# ejecutar_correccion() eliminada — la corrección la realiza el agente general externo
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
+# ── RUTAS DE AUTENTICACIÓN ──────────────────────────────────────────────────
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if 'user_id' in session:
+        return redirect(url_for('index'))
+    
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        user = verificar_usuario(username, password)
+        if user:
+            session.permanent = True # Activa el límite de 12 horas configurado
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['rol'] = user['rol']
+            return redirect(url_for('index'))
+        else:
+            error = "Usuario o contraseña incorrectos."
+            
+    return render_template('login.html', error=error)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+# ── RUTAS PRINCIPALES (PROTEGIDAS) ──────────────────────────────────────────
 
 # ── Rutas Flask ───────────────────────────────────────────────────────────────
 
 @app.route('/')
+@login_required
 def index():
-    return render_template('index.html')
+    return render_template('index.html', rol=session.get('rol'), username=session.get('username'))
 
 
 @app.route('/analizar', methods=['POST'])
+@login_required
 def analizar():
     _limpiar_sesiones_expiradas()
     if 'archivo' not in request.files:
@@ -663,10 +708,191 @@ def analizar():
                     headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
 
+@app.route('/api/reglas/<rule_id>', methods=['POST'])
+@login_required
+def guardar_regla_custom(rule_id):
+    """Recibe ediciones del manual de un error y las guarda en el JSON colaborativo."""
+
+    if session.get('rol') != 'admin':
+        return jsonify({"ok": False, "error": "No tenés permisos para editar la base de conocimiento."}), 403
+    
+    data = request.get_json()
+    if not data:
+        return jsonify({"ok": False, "error": "No se enviaron datos"}), 400
+
+    # 1. Leer el archivo custom existente (o crear uno vacío)
+    custom_rules_file = os.path.join(os.path.dirname(__file__), "reglas_custom.json")
+    custom_rules = {}
+    if os.path.exists(custom_rules_file):
+        try:
+            with open(custom_rules_file, "r", encoding="utf-8") as f:
+                custom_rules = json.load(f)
+        except json.JSONDecodeError:
+            pass
+
+    # 2. Actualizar con los datos del frontend
+    if rule_id not in custom_rules:
+        custom_rules[rule_id] = {}
+    
+    # Filtramos para guardar solo los campos de texto del manual
+    campos_permitidos = ["mensaje", "descripcion", "causa", "solucion", "fix_hint", "tutorial_pasos"]
+    for campo in campos_permitidos:
+        if campo in data:
+            custom_rules[rule_id][campo] = data[campo]
+            # También actualizamos en memoria para que impacte al instante
+            if rule_id in RULE_CATALOG:
+                RULE_CATALOG[rule_id][campo] = data[campo]
+
+    # 3. Guardar en disco
+    try:
+        with open(custom_rules_file, "w", encoding="utf-8") as f:
+            json.dump(custom_rules, f, ensure_ascii=False, indent=4)
+        return jsonify({"ok": True, "mensaje": "Regla actualizada correctamente"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 # Rutas /corregir y /descargar eliminadas — la corrección la realiza el agente general externo
 
+@app.route('/api/subir-normativa', methods=['POST'])
+@login_required
+def subir_normativa():
+    """Recibe un PDF desde el panel Admin, lo sube a Gemini y guarda la referencia."""
+    # 1. Control de seguridad: solo admins pueden subir PDFs
+    if session.get('rol') != 'admin':
+        return jsonify({"ok": False, "error": "No tenés permisos para subir normativa."}), 403
+
+    if 'pdf' not in request.files:
+        return jsonify({"ok": False, "error": "No se recibió ningún archivo."}), 400
+        
+    archivo = request.files['pdf']
+    if not archivo.filename.lower().endswith('.pdf'):
+        return jsonify({"ok": False, "error": "El archivo debe ser un PDF."}), 400
+
+    try:
+        # 2. Guardar el PDF temporalmente para poder subirlo
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+            archivo.save(tmp.name)
+            ruta_tmp = tmp.name
+
+        # 3. Subir el archivo a Gemini (File API)
+        client = _get_client()
+        if not client:
+            return jsonify({"ok": False, "error": "La API Key de Gemini no está configurada."}), 503
+            
+        uploaded_file = client.files.upload(file=ruta_tmp, display_name=archivo.filename)
+        
+        # 4. Guardar la referencia en un JSON local para que el agente la use siempre
+        refs_file = os.path.join(os.path.dirname(__file__), "pdfs_referencia.json")
+        refs = []
+        if os.path.exists(refs_file):
+            with open(refs_file, "r", encoding="utf-8") as f:
+                try:
+                    refs = json.load(f)
+                except:
+                    pass
+                    
+        # Agregamos el nuevo PDF a la lista de conocimiento
+        refs.append({
+            "display_name": archivo.filename,
+            "uri": uploaded_file.uri,
+            "name": uploaded_file.name
+        })
+        
+        with open(refs_file, "w", encoding="utf-8") as f:
+            json.dump(refs, f, indent=4, ensure_ascii=False)
+            
+        # Borrar el temporal
+        os.remove(ruta_tmp)
+
+        return jsonify({
+            "ok": True, 
+            "mensaje": f"PDF '{archivo.filename}' agregado a la base de conocimiento exitosamente."
+        })
+
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route('/api/normativas', methods=['GET'])
+@login_required
+def listar_normativas():
+    """Devuelve la lista de PDFs cargados en la base de conocimiento."""
+    if session.get('rol') != 'admin':
+        return jsonify({"ok": False, "error": "No tenés permisos."}), 403
+    
+    try:
+        refs = cargar_refs()
+        return jsonify({"ok": True, "pdfs": refs})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route('/api/feedback', methods=['POST', 'GET'])
+@login_required
+def handle_feedback():
+    feedback_file = os.path.join(os.path.dirname(__file__), "feedback.json")
+    
+    # GET: Solo los admins pueden leer la lista de tickets/feedback
+    if request.method == 'GET':
+        if session.get('rol') != 'admin':
+            return jsonify({"ok": False, "error": "No tenés permisos."}), 403
+        try:
+            with open(feedback_file, 'r', encoding='utf-8') as f:
+                datos = json.load(f)
+            return jsonify({"ok": True, "data": datos})
+        except:
+            return jsonify({"ok": True, "data": []})
+
+    # POST: Los usuarios envían un ticket o calificación
+    req_data = request.get_json()
+    nuevo_item = {
+        "id": str(uuid.uuid4())[:8],
+        "fecha": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "username": session.get('username'),
+        "archivo": req_data.get('archivo', 'Desconocido'),
+        "tipo": req_data.get('tipo', 'rating'),  # 'rating' o 'ticket'
+        "estrellas": req_data.get('estrellas', 0),
+        "mensaje": req_data.get('mensaje', ''),
+        "estado": "abierto" if req_data.get('tipo') == 'ticket' else "ok"
+    }
+    
+    datos = []
+    if os.path.exists(feedback_file):
+        try:
+            with open(feedback_file, 'r', encoding='utf-8') as f:
+                datos = json.load(f)
+        except:
+            pass
+            
+    datos.insert(0, nuevo_item) # Lo agregamos al principio (más reciente)
+    
+    with open(feedback_file, 'w', encoding='utf-8') as f:
+        json.dump(datos, f, ensure_ascii=False, indent=4)
+        
+    return jsonify({"ok": True, "mensaje": "Enviado con éxito"})
+
+@app.route('/api/feedback/<ticket_id>/cerrar', methods=['POST'])
+@login_required
+def cerrar_ticket(ticket_id):
+    """Permite al admin marcar un ticket como resuelto."""
+    if session.get('rol') != 'admin':
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
+    
+    feedback_file = os.path.join(os.path.dirname(__file__), "feedback.json")
+    try:
+        with open(feedback_file, 'r', encoding='utf-8') as f:
+            datos = json.load(f)
+        for item in datos:
+            if item.get('id') == ticket_id:
+                item['estado'] = 'cerrado'
+                break
+        with open(feedback_file, 'w', encoding='utf-8') as f:
+            json.dump(datos, f, ensure_ascii=False, indent=4)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route('/chat', methods=['POST'])
+@login_required
 def chat():
     data = request.get_json(silent=True) or {}
     messages = data.get('messages') or []
@@ -703,6 +929,7 @@ def chat():
             pass
 
     system_chat = SYSTEM_PROMPT + """
+
 
 ═══════════════════════════════════════════════════════════════
 MODO CHAT CONTEXTUAL

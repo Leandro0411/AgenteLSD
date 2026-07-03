@@ -398,7 +398,33 @@ RULE_CATALOG = {
         "mensaje": "La Base 1 es rechazada por ARCA porque el concepto SAC tiene muy pocos días informados (tope proporcional estricto).",
         "fix_hint": "Cambiar el concepto a SAC semestral o informar los días reales del semestre en las unidades.",
     },
+    "LSD-REG04-BASE9-INDEM": {
+        "severidad": "CRITICO",
+        "campo": "REG04 Base 9",
+        "fuente_pdf": "LS_Conceptos_Basicos_y_Guia_de_Uso_V2.0.pdf",
+        "mensaje": "Base 9 inflada erróneamente por sumar indemnizaciones y redondeos que ARCA excluye.",
+        "causa": "El exportador de e-Sueldos está inyectando erróneamente conceptos indemnizatorios (ej: 0525, 0536) en la Base 9 de la ART.",
+        "fix_hint": "Error de exportación: e-Sueldos está sumando conceptos indemnizatorios a la ART. Modificar manualmente el TXT o forzar bases.",
+    },
 }
+
+# ── CARGA DE CONOCIMIENTO COLABORATIVO (reglas_custom.json) ──
+CUSTOM_RULES_FILE = os.path.join(os.path.dirname(__file__), "reglas_custom.json")
+
+def _cargar_reglas_personalizadas():
+    if os.path.exists(CUSTOM_RULES_FILE):
+        try:
+            with open(CUSTOM_RULES_FILE, "r", encoding="utf-8") as f:
+                custom_rules = json.load(f)
+                for rule_id, custom_data in custom_rules.items():
+                    if rule_id in RULE_CATALOG:
+                        # Pisar los textos base con las mejoras de los consultores
+                        RULE_CATALOG[rule_id].update(custom_data)
+        except Exception as e:
+            print(f"Error cargando reglas personalizadas: {e}")
+
+# Ejecutar al iniciar el módulo
+_cargar_reglas_personalizadas()
 
 def _slice(linea: str, start: int, end: int) -> str:
     return linea[start:end] if len(linea) > start else ''
@@ -895,6 +921,8 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
         # 2. Validar Base 9 Inflada por Indemnizaciones (El error de los 1.6 millones)
         conceptos_infladores = {"0525", "0536", "0537", "0538", "0577", "0599"}
         suma_erronea = _sumar_conceptos(conceptos, conceptos_infladores)
+
+        base9 = reg.get("base9")
         
         if base9 is not None and suma_erronea > Decimal("0") and base9 > (rem or Decimal("0")):
             _add_issue(
@@ -903,8 +931,11 @@ def ejecutar_reglas_deterministicas(analisis: dict) -> list[dict]:
                 linea=reg["linea"],
                 cuil=reg["cuil"],
                 detalle={
-                    "base9_informada": str(base9),
-                    "suma_erronea_detectada": str(suma_erronea),
+                    "base": "9",
+                    "informado": str(base9),
+                    "determinado": str(base9 - suma_erronea),
+                    "diferencia": str(suma_erronea),
+                    "legajo": legajo,
                     "conceptos_culpables": list(conceptos_infladores)
                 }
             )
